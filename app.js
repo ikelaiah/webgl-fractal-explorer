@@ -20,20 +20,12 @@ attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
-// Shared fragment prefix — fractal-specific bodies are appended below.
-//
-// Double-single (DS) emulation gives ~48 bits of mantissa vs the 23 bits in
-// a plain highp float, deferring pixelation until ~10^13× zoom instead of ~10^6×.
-// Each DS number is a pair (hi, lo) where the true value = hi + lo and |lo| < ulp(hi)/2.
-// Arithmetic follows Dekker/Veltkamp two-sum and two-product algorithms.
 const fragHeader = `
 precision highp float;
 
 uniform vec2  uRes;
-// Top-left world coordinate split into f32 hi+lo pairs (computed in JS float64).
-// Pixel (fx, fy) maps to world (uX0.x + uX0.y + fx*uScale, uY0.x + uY0.y + fy*uScale).
-uniform vec2  uX0;      // world X of left edge: (hi, lo)
-uniform vec2  uY0;      // world Y of bottom edge: (hi, lo) — GL Y is bottom-up
+uniform vec3  uX0;      // world X of left edge: triple-single (hi, mid, lo)
+uniform vec3  uY0;      // world Y of bottom edge: triple-single (hi, mid, lo)
 uniform float uScale;   // world units per pixel
 uniform int   uIter;
 uniform float uPalette;
@@ -43,17 +35,18 @@ uniform vec2  uJuliaC;
 #define PI  3.14159265359
 #define TAU 6.28318530718
 
-// ── Coordinate reconstruction ─────────────────────────────────────────────────
-// Compute world coordinate for a pixel offset from the corner.
-// offset (fragCoord component, 0-based from left/bottom) is a small integer-valued
-// float, so offset*uScale is exact to f32 precision.
-// We then add the DS corner using two-sum to preserve the lo bits.
-float worldCoord(vec2 corner, float offset) {
-  float offset_world = offset * uScale;       // exact: small int * small float
-  float s  = corner.x + offset_world;
-  float bb = s - corner.x;
-  float lo = (corner.x - (s - bb)) + (offset_world - bb) + corner.y;
-  return s + lo;
+// ── Triple-single coordinate reconstruction (~72 bits) ────────────────────────
+float worldCoord(vec3 corner, float offset) {
+  float ow = offset * uScale;
+  float s0 = corner.x + ow;
+  float e0 = ow - (s0 - corner.x);
+  float s1 = corner.y + e0;
+  float e1 = e0 - (s1 - corner.y);
+  float s2 = corner.z + e1;
+  float r1 = s0 + s1;
+  float r2 = s1 - (r1 - s0);
+  float r3 = r2 + s2;
+  return r1 + r3;
 }
 
 // ── Color ─────────────────────────────────────────────────────────────────────
@@ -66,7 +59,6 @@ vec3 colorize(float iter, float maxIter, vec2 z) {
   if (iter >= maxIter) return vec3(0.0);
   float sm = iter - log2(max(1.0, log2(dot(z, z)))) + 4.0;
   float t = fract(sm / maxIter + uCycle);
-
   vec3 d;
   int p = int(uPalette);
   if      (p == 0) d = vec3(0.00, 0.18, 0.36);
@@ -74,25 +66,104 @@ vec3 colorize(float iter, float maxIter, vec2 z) {
   else if (p == 2) d = vec3(0.04, 0.30, 0.22);
   else if (p == 3) d = vec3(0.28, 0.02, 0.38);
   else             d = vec3(0.38, 0.28, 0.04);
-
   return cospalette(t, d);
 }
 `;
 
-// ── Mandelbrot ────────────────────────────────────────────────────────────────
+// ── Mandelbrot — standard (low zoom) ─────────────────────────────────────────
 const mandelbrotFrag = fragHeader + `
 void main() {
   vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 512; n++) {
+  for (int n = 0; n < 1024; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
     if (dot(z, z) > 256.0) break;
     i += 1.0;
   }
   gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// ── Mandelbrot — perturbation theory (deep zoom) ──────────────────────────────
+//
+// Each pixel iterates only its delta δ from the reference orbit:
+//   δ_{n+1} = 2·Zn·δn + δn² + Δc
+// where Zn is the reference orbit (stored in uOrbit texture) and Δc is the
+// pixel's offset from the reference point in world space.
+//
+// When |δ| grows large relative to |Z| (glitched pixel), we rebase:
+// reset δ=0 and note the iteration offset so colours stay consistent.
+//
+// uOrbit:  RGBA texture, each texel = (Zn.x, Zn.y, Zn.x²-Zn.y², 2·Zn.x·Zn.y)
+//          packing the squared terms avoids recomputing them in every pixel.
+// uRefN:   number of valid orbit samples in the texture.
+// uDcCenter: (Δcx, Δcy) — world-space offset of screen center from reference.
+//            Usually (0,0) but non-zero when panning without recomputing orbit.
+
+const mandelbrotPertFrag = fragHeader + `
+uniform sampler2D uOrbit;   // reference orbit: (Zx, Zy, Zx2-Zy2, 2ZxZy)
+uniform int       uRefN;    // orbit length (≤ uIter)
+
+void main() {
+  // Δc = pixel offset from screen centre in world units.
+  // Reference IS the screen centre, so this is exact and small — no cancellation.
+  vec2 dc = (gl_FragCoord.xy - uRes * 0.5) * uScale;
+
+  vec2  delta = vec2(0.0);
+  vec4  s     = vec4(0.0);
+  vec2  Z     = vec2(0.0);
+  float i     = 0.0;
+  float mi    = float(uIter);
+  int   refN  = uRefN;
+  int   rebaseAt = 0;
+
+  for (int n = 0; n < 1024; n++) {
+    if (n >= uIter) break;
+
+    // Orbit index relative to last rebase
+    int orbitIdx = n - rebaseAt;
+    if (orbitIdx >= refN) {
+      // Reference orbit too short (e.g. periodic) — wrap back to start
+      rebaseAt = n;
+      orbitIdx = 0;
+      delta    = vec2(0.0);
+    }
+
+    float t = (float(orbitIdx) + 0.5) / float(refN);
+    s = texture2D(uOrbit, vec2(t, 0.5));
+    Z = s.xy;   // Zn (reference orbit point)
+
+    // Full perturbed value at this step: Wn = Zn + δn
+    vec2 full = Z + delta;
+
+    // Escape check on full value
+    if (dot(full, full) > 256.0) {
+      gl_FragColor = vec4(colorize(i, mi, full), 1.0);
+      return;
+    }
+
+    // Rebase if δ has grown to dominate Z — float32 errors in δ would corrupt results
+    if (dot(delta, delta) > dot(Z, Z)) {
+      rebaseAt = n + 1;
+      delta    = vec2(0.0);
+      i       += 1.0;
+      continue;
+    }
+
+    // δ_{n+1} = (2·Zn + δn)·δn + Δc
+    vec2 twoZpD = 2.0 * Z + delta;
+    delta = vec2(
+      twoZpD.x * delta.x - twoZpD.y * delta.y,
+      twoZpD.x * delta.y + twoZpD.y * delta.x
+    ) + dc;
+
+    i += 1.0;
+  }
+
+  gl_FragColor = vec4(colorize(i, mi, Z + delta), 1.0);
 }
 `;
 
@@ -103,7 +174,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 c = uJuliaC;
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 512; n++) {
+  for (int n = 0; n < 1024; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
     if (dot(z, z) > 256.0) break;
@@ -120,7 +191,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 512; n++) {
+  for (int n = 0; n < 1024; n++) {
     if (n >= uIter) break;
     z = vec2(abs(z.x), abs(z.y));
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
@@ -138,7 +209,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 512; n++) {
+  for (int n = 0; n < 1024; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, -2.0*z.x*z.y) + c;
     if (dot(z, z) > 256.0) break;
@@ -151,10 +222,10 @@ void main() {
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
-  { name: "Mandelbrot Set",     src: mandelbrotFrag,  center: [-0.5, 0.0], scale: 3.5,  julia: false },
-  { name: "Julia Set",          src: juliaFrag,       center: [0.0, 0.0],  scale: 3.5,  julia: true  },
-  { name: "Burning Ship",       src: burningShipFrag, center: [-0.5,-0.5], scale: 3.5,  julia: false },
-  { name: "Tricorn (Mandelbar)",src: tricornFrag,     center: [0.0, 0.0],  scale: 3.5,  julia: false },
+  { name: "Mandelbrot Set",     src: mandelbrotFrag,  center: [-0.5, 0.0], scale: 3.5,  julia: false, pert: true  },
+  { name: "Julia Set",          src: juliaFrag,       center: [0.0, 0.0],  scale: 3.5,  julia: true,  pert: false },
+  { name: "Burning Ship",       src: burningShipFrag, center: [-0.5,-0.5], scale: 3.5,  julia: false, pert: false },
+  { name: "Tricorn (Mandelbar)",src: tricornFrag,     center: [0.0, 0.0],  scale: 3.5,  julia: false, pert: false },
 ];
 
 // ─── WebGL helpers ────────────────────────────────────────────────────────────
@@ -184,7 +255,7 @@ function buildProgram(fragSrc) {
   return prog;
 }
 
-// Pre-compile all programs
+// Pre-compile standard programs
 const programs = FRACTALS.map(f => {
   const prog = buildProgram(f.src);
   return {
@@ -202,6 +273,38 @@ const programs = FRACTALS.map(f => {
     },
   };
 });
+
+// Perturbation program (Mandelbrot deep zoom)
+const pertProg = buildProgram(mandelbrotPertFrag);
+const pertLoc = {
+  pos:      gl.getAttribLocation(pertProg,  "aPos"),
+  res:      gl.getUniformLocation(pertProg, "uRes"),
+  x0:       gl.getUniformLocation(pertProg, "uX0"),
+  y0:       gl.getUniformLocation(pertProg, "uY0"),
+  scale:    gl.getUniformLocation(pertProg, "uScale"),
+  iter:     gl.getUniformLocation(pertProg, "uIter"),
+  palette:  gl.getUniformLocation(pertProg, "uPalette"),
+  cycle:    gl.getUniformLocation(pertProg, "uCycle"),
+  juliaC:   gl.getUniformLocation(pertProg, "uJuliaC"),
+  orbit:    gl.getUniformLocation(pertProg, "uOrbit"),
+  refN:     gl.getUniformLocation(pertProg, "uRefN"),
+};
+
+// ─── Orbit texture ────────────────────────────────────────────────────────────
+
+const MAX_ORBIT = 1024;
+// Must enable float texture extension before creating the texture
+const floatExt = gl.getExtension("OES_texture_float");
+if (!floatExt) console.warn("OES_texture_float not supported — deep zoom disabled");
+
+const orbitTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAX_ORBIT, 1, 0, gl.RGBA, gl.FLOAT,
+  new Float32Array(MAX_ORBIT * 4));
 
 const quad = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -233,35 +336,85 @@ const STORAGE_KEY = "fractal2d_v1";
 const state = {
   fractalIdx: 0,
   palette: 0,
-  // view
   centerX: FRACTALS[0].center[0],
   centerY: FRACTALS[0].center[1],
-  pixelScale: 0,  // set by resetView()
-  // drag
+  pixelScale: 0,
   dragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  dragStartCX: 0,
-  dragStartCY: 0,
-  // fps
+  dragStartX: 0, dragStartY: 0,
+  dragStartCX: 0, dragStartCY: 0,
   fpsFrames: 0,
   fpsTime: performance.now(),
   lastTime: performance.now(),
 };
 
+// ─── Perturbation orbit ───────────────────────────────────────────────────────
+
+// Use perturbation above ~5000× zoom. Standard triple-single handles below that.
+// Perturbation needs a long reference orbit — it breaks when the reference point
+// escapes quickly (e.g. near the boundary at low zoom).
+const PERT_THRESHOLD = 3.5e-7;
+
+// Reference point for the current orbit (float64)
+let orbitRefX = NaN;
+let orbitRefY = NaN;
+let orbitLength = 0;
+
+// Compute reference orbit at (cx, cy) using float64 arithmetic.
+// Stores up to maxIter iterates; stops early on escape.
+// Uploads result to orbitTex.
+function computeOrbit(cx, cy, maxIter) {
+  const n = Math.min(maxIter, MAX_ORBIT);
+  const data = new Float32Array(MAX_ORBIT * 4);
+
+  let zx = 0, zy = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const zx2 = zx * zx, zy2 = zy * zy;
+    // Store current iterate: (Zx, Zy, Zx²-Zy², 2·Zx·Zy)
+    data[i * 4 + 0] = zx;
+    data[i * 4 + 1] = zy;
+    data[i * 4 + 2] = zx2 - zy2;
+    data[i * 4 + 3] = 2 * zx * zy;
+    // Advance: Z_{n+1} = Z_n² + C
+    const nx = zx2 - zy2 + cx;
+    const ny = 2 * zx * zy + cy;
+    zx = nx; zy = ny;
+    count++;
+    if (zx * zx + zy * zy > 256) break;
+  }
+
+  orbitLength = count;
+  gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MAX_ORBIT, 1, gl.RGBA, gl.FLOAT, data);
+  orbitRefX = cx;
+  orbitRefY = cy;
+}
+
+// Returns true if the orbit needs recomputing for the current view.
+function orbitStale(maxIter) {
+  if (orbitLength === 0) return true;
+  // Recompute if maxIter increased beyond what was computed (and orbit didn't fill up)
+  if (orbitLength < maxIter && orbitLength < MAX_ORBIT) return true;
+  // Recompute if center has drifted more than ~half a screen from the reference point
+  const drift = Math.max(
+    Math.abs(orbitRefX - state.centerX),
+    Math.abs(orbitRefY - state.centerY)
+  );
+  return drift > state.pixelScale * Math.max(canvas.width, canvas.height) * 0.5;
+}
+
 function resetView(idx) {
   const f = FRACTALS[idx ?? state.fractalIdx];
   state.centerX = f.center[0];
   state.centerY = f.center[1];
-  // scale so the default viewport width covers f.scale world units
   state.pixelScale = f.scale / Math.max(canvas.width || 800, 1);
+  orbitLength = 0; // invalidate orbit on reset
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 function saveSettings() {
   try {
-    // Save view per-fractal so switching doesn't inherit another fractal's zoom.
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     views[state.fractalIdx] = { cx: state.centerX, cy: state.centerY, ps: state.pixelScale };
     localStorage.setItem(STORAGE_KEY + "_views", JSON.stringify(views));
@@ -283,7 +436,6 @@ function loadSettings() {
     if (s.iterations) ui.iterations.value = s.iterations;
     if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
     if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
-    // Restore per-fractal view if available
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[state.fractalIdx];
     if (v) { state.centerX = v.cx; state.centerY = v.cy; state.pixelScale = v.ps; }
@@ -299,7 +451,7 @@ function saveViewForCurrentFractal() {
 }
 
 function restoreViewForFractal(idx) {
-  resetView(idx);  // start from default
+  resetView(idx);
   try {
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[idx];
@@ -313,8 +465,8 @@ function stateToParams() {
   return new URLSearchParams({
     f:  state.fractalIdx,
     pa: state.palette,
-    cx: state.centerX.toFixed(10),
-    cy: state.centerY.toFixed(10),
+    cx: state.centerX.toFixed(15),
+    cy: state.centerY.toFixed(15),
     ps: state.pixelScale.toExponential(6),
     it: ui.iterations.value,
     cc: ui.colorCycle.value,
@@ -341,30 +493,30 @@ function resize() {
   const w = Math.max(1, Math.floor(canvas.clientWidth  * dpr));
   const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = w; canvas.height = h;
     gl.viewport(0, 0, w, h);
     if (!state.pixelScale) resetView();
   }
 }
 
-// ─── Julia C from angle on cardioid-ish circle ────────────────────────────────
+// ─── Julia C ──────────────────────────────────────────────────────────────────
 
 function juliaC() {
   const a = parseFloat(ui.juliaAngle.value);
-  // A classic circle of interesting Julia parameters
   return [0.7885 * Math.cos(a), 0.7885 * Math.sin(a)];
 }
 
-// ─── Sync UI text ─────────────────────────────────────────────────────────────
+// ─── Sync UI ──────────────────────────────────────────────────────────────────
 
 function updateUI() {
   const f = FRACTALS[state.fractalIdx];
   ui.fractalName.textContent = f.name;
   ui.juliaRow.style.display  = f.julia ? "" : "none";
   ui.iterReadout.textContent = ui.iterations.value;
-  const zoom = (FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1)));
-  ui.zoomReadout.textContent = zoom >= 1000
+  const zoom = FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1));
+  ui.zoomReadout.textContent = zoom >= 1e6
+    ? (zoom / 1e6).toFixed(2) + "M×"
+    : zoom >= 1000
     ? (zoom / 1000).toFixed(1) + "k×"
     : zoom.toFixed(zoom < 10 ? 2 : 0) + "×";
 }
@@ -386,22 +538,17 @@ function share() {
   }).catch(() => window.prompt("Copy link:", url));
 }
 
-// Pointer pan
 canvas.addEventListener("pointerdown", e => {
   state.dragging = true;
-  state.dragStartX  = e.clientX;
-  state.dragStartY  = e.clientY;
-  state.dragStartCX = state.centerX;
-  state.dragStartCY = state.centerY;
+  state.dragStartX = e.clientX; state.dragStartY = e.clientY;
+  state.dragStartCX = state.centerX; state.dragStartCY = state.centerY;
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove", e => {
   if (!state.dragging) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const dx = (e.clientX - state.dragStartX) * dpr;
-  const dy = (e.clientY - state.dragStartY) * dpr;
-  state.centerX = state.dragStartCX - dx * state.pixelScale;
-  state.centerY = state.dragStartCY + dy * state.pixelScale;  // +Y = up in GL
+  state.centerX = state.dragStartCX - (e.clientX - state.dragStartX) * dpr * state.pixelScale;
+  state.centerY = state.dragStartCY + (e.clientY - state.dragStartY) * dpr * state.pixelScale;
 });
 canvas.addEventListener("pointerup", e => {
   state.dragging = false;
@@ -409,22 +556,18 @@ canvas.addEventListener("pointerup", e => {
   saveSettings();
 });
 
-// Scroll zoom — zoom toward cursor
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
-  const dpr    = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const factor = e.deltaY > 0 ? 1.12 : 1 / 1.12;
-  // cursor in world coords before zoom
   const cx = (e.offsetX * dpr - canvas.width  * 0.5) * state.pixelScale + state.centerX;
   const cy = (canvas.height * 0.5 - e.offsetY * dpr) * state.pixelScale + state.centerY;
   state.pixelScale *= factor;
-  // shift center so the point under cursor stays fixed
   state.centerX = cx - (e.offsetX * dpr - canvas.width  * 0.5) * state.pixelScale;
   state.centerY = cy - (canvas.height * 0.5 - e.offsetY * dpr) * state.pixelScale;
   saveSettings();
 }, { passive: false });
 
-// Keyboard
 const keys = {};
 window.addEventListener("keydown", e => {
   keys[e.code] = true;
@@ -435,7 +578,6 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { keys[e.code] = false; });
 
-// Touch pinch-to-zoom
 let lastPinchDist = 0;
 canvas.addEventListener("touchstart", e => {
   if (e.touches.length === 2) {
@@ -447,11 +589,10 @@ canvas.addEventListener("touchstart", e => {
 canvas.addEventListener("touchmove", e => {
   if (e.touches.length === 2) {
     e.preventDefault();
-    const dx   = e.touches[0].clientX - e.touches[1].clientX;
-    const dy   = e.touches[0].clientY - e.touches[1].clientY;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    const factor = lastPinchDist / dist;
-    state.pixelScale *= factor;
+    state.pixelScale *= lastPinchDist / dist;
     lastPinchDist = dist;
   }
 }, { passive: false });
@@ -470,7 +611,6 @@ window.addEventListener("resize", resize);
 function applyKeyboard(dt) {
   const panSpeed  = state.pixelScale * canvas.width * dt * 0.6;
   const zoomSpeed = Math.pow(2, dt * 1.5);
-
   if (keys["ArrowLeft"]  || keys["KeyA"]) state.centerX -= panSpeed;
   if (keys["ArrowRight"] || keys["KeyD"]) state.centerX += panSpeed;
   if (keys["ArrowUp"]    || keys["KeyW"]) state.centerY += panSpeed;
@@ -479,16 +619,13 @@ function applyKeyboard(dt) {
   if (keys["Minus"] || keys["NumpadSubtract"]) state.pixelScale *= zoomSpeed;
 }
 
-// ─── Double-single split ─────────────────────────────────────────────────────
-// Split a JS double into (hi, lo) such that hi + lo === value exactly (in f32).
-// Uses the Veltkamp split: multiply by 2^12+1 to isolate the high 12 bits.
-function dsSplit(x) {
-  // Split JS double x into two float32s (hi, lo) where hi + lo ≈ x.
-  // We simply cast x to f32 for hi, then store the residual in lo.
-  // This gives ~24 bits in hi and up to ~24 more bits in lo.
-  const hi = Math.fround(x);
-  const lo = Math.fround(x - hi);
-  return [hi, lo];
+// ─── Triple-single split ──────────────────────────────────────────────────────
+
+function tsSplit(x) {
+  const hi  = Math.fround(x);
+  const mid = Math.fround(x - hi);
+  const lo  = Math.fround(x - hi - mid);
+  return [hi, mid, lo];
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -500,7 +637,6 @@ function render(now) {
 
   applyKeyboard(dt);
 
-  // FPS counter
   state.fpsFrames++;
   if (now - state.fpsTime > 500) {
     ui.fpsReadout.textContent = String(Math.round(state.fpsFrames * 1000 / (now - state.fpsTime)));
@@ -510,15 +646,26 @@ function render(now) {
 
   updateUI();
 
-  const { prog, loc } = programs[state.fractalIdx];
-  const jc = juliaC();
-  // Compute world coordinate at fragCoord = 0 (left/bottom edge extrapolation).
-  // worldCoord(fx) = x0 + fx * scale, so x0 = centerX - width/2 * scale.
-  // The shader receives gl_FragCoord which starts at 0.5, but we bake 0-origin here.
+  const maxIter = parseInt(ui.iterations.value, 10);
+  const f = FRACTALS[state.fractalIdx];
+  // Also require a long reference orbit — short orbits (reference near boundary)
+  // cause the shader to wrap incorrectly, producing black.
+  const usePert = f.pert && floatExt && state.pixelScale < PERT_THRESHOLD
+                  && orbitLength >= Math.min(maxIter, MAX_ORBIT);
+
+  // Update reference orbit when in perturbation mode
+  if (usePert && orbitStale(maxIter)) {
+    computeOrbit(state.centerX, state.centerY, maxIter);
+  }
+
   const x0 = state.centerX - canvas.width  * 0.5 * state.pixelScale;
   const y0 = state.centerY - canvas.height * 0.5 * state.pixelScale;
-  const [x0Hi, x0Lo] = dsSplit(x0);
-  const [y0Hi, y0Lo] = dsSplit(y0);
+  const [x0Hi, x0Mid, x0Lo] = tsSplit(x0);
+  const [y0Hi, y0Mid, y0Lo] = tsSplit(y0);
+
+  const prog = usePert ? pertProg : programs[state.fractalIdx].prog;
+  const loc  = usePert ? pertLoc  : programs[state.fractalIdx].loc;
+  const jc   = juliaC();
 
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -526,13 +673,20 @@ function render(now) {
   gl.vertexAttribPointer(loc.pos, 2, gl.FLOAT, false, 0, 0);
 
   gl.uniform2f(loc.res,    canvas.width, canvas.height);
-  gl.uniform2f(loc.x0,     x0Hi, x0Lo);
-  gl.uniform2f(loc.y0,     y0Hi, y0Lo);
+  gl.uniform3f(loc.x0,    x0Hi, x0Mid, x0Lo);
+  gl.uniform3f(loc.y0,    y0Hi, y0Mid, y0Lo);
   gl.uniform1f(loc.scale,  state.pixelScale);
-  gl.uniform1i(loc.iter,   parseInt(ui.iterations.value, 10));
+  gl.uniform1i(loc.iter,   maxIter);
   gl.uniform1f(loc.palette, state.palette);
   gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
   gl.uniform2f(loc.juliaC, jc[0], jc[1]);
+
+  if (usePert) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, orbitTex);
+    gl.uniform1i(loc.orbit, 0);
+    gl.uniform1i(loc.refN,  orbitLength);
+  }
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(render);
