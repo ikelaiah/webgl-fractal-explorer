@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WebGL Fractal Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <canvas id="fractal" aria-label="Interactive 2D fractal explorer"></canvas>
+
+      <section class="hud" aria-label="Fractal controls">
+        <div class="brand">
+          <span class="mark"></span>
+          <div>
+            <h1>Fractal Explorer</h1>
+            <p id="fractalName">Mandelbrot Set</p>
+          </div>
+        </div>
+
+        <div class="readouts">
+          <div>
+            <span>Zoom</span>
+            <strong id="zoomReadout">1×</strong>
+          </div>
+          <div>
+            <span>FPS</span>
+            <strong id="fpsReadout">60</strong>
+          </div>
+          <div>
+            <span>Iter</span>
+            <strong id="iterReadout">256</strong>
+          </div>
+        </div>
+
+        <div class="control-grid">
+          <label>
+            <span>Iterations</span>
+            <input id="iterations" type="range" min="32" max="512" step="8" value="256">
+          </label>
+          <label>
+            <span>Color</span>
+            <input id="colorCycle" type="range" min="0" max="4" step="0.01" value="0">
+          </label>
+          <label id="juliaRow" style="display:none">
+            <span>Julia C</span>
+            <input id="juliaAngle" type="range" min="0" max="6.2832" step="0.01" value="0">
+          </label>
+        </div>
+
+        <div class="buttons" role="group" aria-label="Mode controls">
+          <button id="btnFractal" type="button" title="Switch fractal (F)">Fractal</button>
+          <button id="btnPalette" type="button" title="Change palette (P)">Palette</button>
+          <button id="btnReset"   type="button" title="Reset view (R)">Reset</button>
+          <button id="btnShare"   type="button" title="Copy link (C)">Share</button>
+        </div>
+      </section>
+
+      <section class="tips" aria-label="Input hints">
+        <span>Drag to pan</span>
+        <span>Scroll to zoom</span>
+        <span>F — switch fractal</span>
+        <span>P — palette</span>
+        <span>R — reset</span>
+        <span>C — share</span>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
