@@ -35,7 +35,8 @@ uniform vec2  uJuliaC;
 #define PI  3.14159265359
 #define TAU 6.28318530718
 
-// ── Triple-single coordinate reconstruction (~72 bits) ────────────────────────
+// Triple-single coordinate reconstruction (~72 bits of precision).
+// Pushes pixelation to ~10^14x zoom.
 float worldCoord(vec3 corner, float offset) {
   float ow = offset * uScale;
   float s0 = corner.x + ow;
@@ -49,7 +50,6 @@ float worldCoord(vec3 corner, float offset) {
   return r1 + r3;
 }
 
-// ── Color ─────────────────────────────────────────────────────────────────────
 vec3 cospalette(float t, vec3 d) {
   vec3 a = vec3(0.5), b = vec3(0.5), c = vec3(1.0);
   return a + b * cos(TAU * (c * t + d));
@@ -70,7 +70,7 @@ vec3 colorize(float iter, float maxIter, vec2 z) {
 }
 `;
 
-// ── Mandelbrot — standard (low zoom) ─────────────────────────────────────────
+// ── Mandelbrot ────────────────────────────────────────────────────────────────
 const mandelbrotFrag = fragHeader + `
 void main() {
   vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
@@ -84,86 +84,6 @@ void main() {
     i += 1.0;
   }
   gl_FragColor = vec4(colorize(i, mi, z), 1.0);
-}
-`;
-
-// ── Mandelbrot — perturbation theory (deep zoom) ──────────────────────────────
-//
-// Each pixel iterates only its delta δ from the reference orbit:
-//   δ_{n+1} = 2·Zn·δn + δn² + Δc
-// where Zn is the reference orbit (stored in uOrbit texture) and Δc is the
-// pixel's offset from the reference point in world space.
-//
-// When |δ| grows large relative to |Z| (glitched pixel), we rebase:
-// reset δ=0 and note the iteration offset so colours stay consistent.
-//
-// uOrbit:  RGBA texture, each texel = (Zn.x, Zn.y, Zn.x²-Zn.y², 2·Zn.x·Zn.y)
-//          packing the squared terms avoids recomputing them in every pixel.
-// uRefN:   number of valid orbit samples in the texture.
-// uDcCenter: (Δcx, Δcy) — world-space offset of screen center from reference.
-//            Usually (0,0) but non-zero when panning without recomputing orbit.
-
-const mandelbrotPertFrag = fragHeader + `
-uniform sampler2D uOrbit;   // reference orbit: (Zx, Zy, Zx2-Zy2, 2ZxZy)
-uniform int       uRefN;    // orbit length (≤ uIter)
-
-void main() {
-  // Δc = pixel offset from screen centre in world units.
-  // Reference IS the screen centre, so this is exact and small — no cancellation.
-  vec2 dc = (gl_FragCoord.xy - uRes * 0.5) * uScale;
-
-  vec2  delta = vec2(0.0);
-  vec4  s     = vec4(0.0);
-  vec2  Z     = vec2(0.0);
-  float i     = 0.0;
-  float mi    = float(uIter);
-  int   refN  = uRefN;
-  int   rebaseAt = 0;
-
-  for (int n = 0; n < 1024; n++) {
-    if (n >= uIter) break;
-
-    // Orbit index relative to last rebase
-    int orbitIdx = n - rebaseAt;
-    if (orbitIdx >= refN) {
-      // Reference orbit too short (e.g. periodic) — wrap back to start
-      rebaseAt = n;
-      orbitIdx = 0;
-      delta    = vec2(0.0);
-    }
-
-    float t = (float(orbitIdx) + 0.5) / float(refN);
-    s = texture2D(uOrbit, vec2(t, 0.5));
-    Z = s.xy;   // Zn (reference orbit point)
-
-    // Full perturbed value at this step: Wn = Zn + δn
-    vec2 full = Z + delta;
-
-    // Escape check on full value
-    if (dot(full, full) > 256.0) {
-      gl_FragColor = vec4(colorize(i, mi, full), 1.0);
-      return;
-    }
-
-    // Rebase if δ has grown to dominate Z — float32 errors in δ would corrupt results
-    if (dot(delta, delta) > dot(Z, Z)) {
-      rebaseAt = n + 1;
-      delta    = vec2(0.0);
-      i       += 1.0;
-      continue;
-    }
-
-    // δ_{n+1} = (2·Zn + δn)·δn + Δc
-    vec2 twoZpD = 2.0 * Z + delta;
-    delta = vec2(
-      twoZpD.x * delta.x - twoZpD.y * delta.y,
-      twoZpD.x * delta.y + twoZpD.y * delta.x
-    ) + dc;
-
-    i += 1.0;
-  }
-
-  gl_FragColor = vec4(colorize(i, mi, Z + delta), 1.0);
 }
 `;
 
@@ -222,10 +142,10 @@ void main() {
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
-  { name: "Mandelbrot Set",     src: mandelbrotFrag,  center: [-0.5, 0.0], scale: 3.5,  julia: false, pert: true  },
-  { name: "Julia Set",          src: juliaFrag,       center: [0.0, 0.0],  scale: 3.5,  julia: true,  pert: false },
-  { name: "Burning Ship",       src: burningShipFrag, center: [-0.5,-0.5], scale: 3.5,  julia: false, pert: false },
-  { name: "Tricorn (Mandelbar)",src: tricornFrag,     center: [0.0, 0.0],  scale: 3.5,  julia: false, pert: false },
+  { name: "Mandelbrot Set",     src: mandelbrotFrag,  center: [-0.5, 0.0], scale: 3.5, julia: false },
+  { name: "Julia Set",          src: juliaFrag,       center: [0.0,  0.0], scale: 3.5, julia: true  },
+  { name: "Burning Ship",       src: burningShipFrag, center: [-0.5,-0.5], scale: 3.5, julia: false },
+  { name: "Tricorn (Mandelbar)",src: tricornFrag,     center: [0.0,  0.0], scale: 3.5, julia: false },
 ];
 
 // ─── WebGL helpers ────────────────────────────────────────────────────────────
@@ -255,7 +175,6 @@ function buildProgram(fragSrc) {
   return prog;
 }
 
-// Pre-compile standard programs
 const programs = FRACTALS.map(f => {
   const prog = buildProgram(f.src);
   return {
@@ -273,38 +192,6 @@ const programs = FRACTALS.map(f => {
     },
   };
 });
-
-// Perturbation program (Mandelbrot deep zoom)
-const pertProg = buildProgram(mandelbrotPertFrag);
-const pertLoc = {
-  pos:      gl.getAttribLocation(pertProg,  "aPos"),
-  res:      gl.getUniformLocation(pertProg, "uRes"),
-  x0:       gl.getUniformLocation(pertProg, "uX0"),
-  y0:       gl.getUniformLocation(pertProg, "uY0"),
-  scale:    gl.getUniformLocation(pertProg, "uScale"),
-  iter:     gl.getUniformLocation(pertProg, "uIter"),
-  palette:  gl.getUniformLocation(pertProg, "uPalette"),
-  cycle:    gl.getUniformLocation(pertProg, "uCycle"),
-  juliaC:   gl.getUniformLocation(pertProg, "uJuliaC"),
-  orbit:    gl.getUniformLocation(pertProg, "uOrbit"),
-  refN:     gl.getUniformLocation(pertProg, "uRefN"),
-};
-
-// ─── Orbit texture ────────────────────────────────────────────────────────────
-
-const MAX_ORBIT = 1024;
-// Must enable float texture extension before creating the texture
-const floatExt = gl.getExtension("OES_texture_float");
-if (!floatExt) console.warn("OES_texture_float not supported — deep zoom disabled");
-
-const orbitTex = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, orbitTex);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAX_ORBIT, 1, 0, gl.RGBA, gl.FLOAT,
-  new Float32Array(MAX_ORBIT * 4));
 
 const quad = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -347,68 +234,11 @@ const state = {
   lastTime: performance.now(),
 };
 
-// ─── Perturbation orbit ───────────────────────────────────────────────────────
-
-// Use perturbation above ~5000× zoom. Standard triple-single handles below that.
-// Perturbation needs a long reference orbit — it breaks when the reference point
-// escapes quickly (e.g. near the boundary at low zoom).
-const PERT_THRESHOLD = 3.5e-7;
-
-// Reference point for the current orbit (float64)
-let orbitRefX = NaN;
-let orbitRefY = NaN;
-let orbitLength = 0;
-
-// Compute reference orbit at (cx, cy) using float64 arithmetic.
-// Stores up to maxIter iterates; stops early on escape.
-// Uploads result to orbitTex.
-function computeOrbit(cx, cy, maxIter) {
-  const n = Math.min(maxIter, MAX_ORBIT);
-  const data = new Float32Array(MAX_ORBIT * 4);
-
-  let zx = 0, zy = 0;
-  let count = 0;
-  for (let i = 0; i < n; i++) {
-    const zx2 = zx * zx, zy2 = zy * zy;
-    // Store current iterate: (Zx, Zy, Zx²-Zy², 2·Zx·Zy)
-    data[i * 4 + 0] = zx;
-    data[i * 4 + 1] = zy;
-    data[i * 4 + 2] = zx2 - zy2;
-    data[i * 4 + 3] = 2 * zx * zy;
-    // Advance: Z_{n+1} = Z_n² + C
-    const nx = zx2 - zy2 + cx;
-    const ny = 2 * zx * zy + cy;
-    zx = nx; zy = ny;
-    count++;
-    if (zx * zx + zy * zy > 256) break;
-  }
-
-  orbitLength = count;
-  gl.bindTexture(gl.TEXTURE_2D, orbitTex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MAX_ORBIT, 1, gl.RGBA, gl.FLOAT, data);
-  orbitRefX = cx;
-  orbitRefY = cy;
-}
-
-// Returns true if the orbit needs recomputing for the current view.
-function orbitStale(maxIter) {
-  if (orbitLength === 0) return true;
-  // Recompute if maxIter increased beyond what was computed (and orbit didn't fill up)
-  if (orbitLength < maxIter && orbitLength < MAX_ORBIT) return true;
-  // Recompute if center has drifted more than ~half a screen from the reference point
-  const drift = Math.max(
-    Math.abs(orbitRefX - state.centerX),
-    Math.abs(orbitRefY - state.centerY)
-  );
-  return drift > state.pixelScale * Math.max(canvas.width, canvas.height) * 0.5;
-}
-
 function resetView(idx) {
   const f = FRACTALS[idx ?? state.fractalIdx];
   state.centerX = f.center[0];
   state.centerY = f.center[1];
   state.pixelScale = f.scale / Math.max(canvas.width || 800, 1);
-  orbitLength = 0; // invalidate orbit on reset
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
@@ -646,26 +476,13 @@ function render(now) {
 
   updateUI();
 
-  const maxIter = parseInt(ui.iterations.value, 10);
-  const f = FRACTALS[state.fractalIdx];
-  // Also require a long reference orbit — short orbits (reference near boundary)
-  // cause the shader to wrap incorrectly, producing black.
-  const usePert = f.pert && floatExt && state.pixelScale < PERT_THRESHOLD
-                  && orbitLength >= Math.min(maxIter, MAX_ORBIT);
-
-  // Update reference orbit when in perturbation mode
-  if (usePert && orbitStale(maxIter)) {
-    computeOrbit(state.centerX, state.centerY, maxIter);
-  }
+  const { prog, loc } = programs[state.fractalIdx];
+  const jc = juliaC();
 
   const x0 = state.centerX - canvas.width  * 0.5 * state.pixelScale;
   const y0 = state.centerY - canvas.height * 0.5 * state.pixelScale;
   const [x0Hi, x0Mid, x0Lo] = tsSplit(x0);
   const [y0Hi, y0Mid, y0Lo] = tsSplit(y0);
-
-  const prog = usePert ? pertProg : programs[state.fractalIdx].prog;
-  const loc  = usePert ? pertLoc  : programs[state.fractalIdx].loc;
-  const jc   = juliaC();
 
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -676,17 +493,10 @@ function render(now) {
   gl.uniform3f(loc.x0,    x0Hi, x0Mid, x0Lo);
   gl.uniform3f(loc.y0,    y0Hi, y0Mid, y0Lo);
   gl.uniform1f(loc.scale,  state.pixelScale);
-  gl.uniform1i(loc.iter,   maxIter);
+  gl.uniform1i(loc.iter,   parseInt(ui.iterations.value, 10));
   gl.uniform1f(loc.palette, state.palette);
   gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
   gl.uniform2f(loc.juliaC, jc[0], jc[1]);
-
-  if (usePert) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, orbitTex);
-    gl.uniform1i(loc.orbit, 0);
-    gl.uniform1i(loc.refN,  orbitLength);
-  }
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   requestAnimationFrame(render);
