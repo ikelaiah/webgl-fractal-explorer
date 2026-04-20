@@ -1,12 +1,16 @@
 "use strict";
 
 const canvas = document.getElementById("fractal");
+const minimap = document.getElementById("minimap");
 const gl = canvas.getContext("webgl", {
   antialias: false,
   depth: false,
   stencil: false,
   preserveDrawingBuffer: false,
 });
+const miniCtx = minimap.getContext("2d");
+const minimapBase = document.createElement("canvas");
+const minimapBaseCtx = minimapBase.getContext("2d");
 
 if (!gl) {
   document.body.innerHTML = '<main class="fallback">WebGL is not available in this browser.</main>';
@@ -32,7 +36,7 @@ uniform float uPalette;
 uniform float uCycle;
 uniform vec2  uJuliaC;
 
-#define MAX_ITER 2048
+#define MAX_ITER 1024
 #define PI  3.14159265359
 #define TAU 6.28318530718
 
@@ -318,8 +322,10 @@ const ui = {
 
 const STORAGE_KEY = "fractal2d_v1";
 const MIN_ITER = 32;
-const MAX_ITER = 2048;
+const MAX_ITER = 1024;
 const DEFAULT_ITER = 256;
+const CAMERA_EASE = 12;
+const MINIMAP_ITER = 56;
 
 const state = {
   fractalIdx: 0,
@@ -327,6 +333,9 @@ const state = {
   centerX: FRACTALS[0].center[0],
   centerY: FRACTALS[0].center[1],
   pixelScale: 0,
+  targetCenterX: FRACTALS[0].center[0],
+  targetCenterY: FRACTALS[0].center[1],
+  targetPixelScale: 0,
   dragging: false,
   dragStartX: 0, dragStartY: 0,
   dragStartCX: 0, dragStartCY: 0,
@@ -335,11 +344,58 @@ const state = {
   lastTime: performance.now(),
 };
 
+const activePointers = new Map();
+const gesture = {
+  pinchStartDist: 0,
+  pinchStartScale: 0,
+  pinchAnchorX: 0,
+  pinchAnchorY: 0,
+};
+
+let minimapDirty = true;
+
 function resetView(idx) {
   const f = FRACTALS[idx ?? state.fractalIdx];
-  state.centerX = f.center[0];
-  state.centerY = f.center[1];
-  state.pixelScale = f.scale / Math.max(canvas.width || 800, 1);
+  setCameraTarget(f.center[0], f.center[1], f.scale / Math.max(canvas.width || 800, 1), true);
+}
+
+function setCameraTarget(cx, cy, pixelScale, immediate = false) {
+  const fallback = FRACTALS[state.fractalIdx].scale / Math.max(canvas.width || 800, 1);
+  state.targetCenterX = Number.isFinite(cx) ? cx : FRACTALS[state.fractalIdx].center[0];
+  state.targetCenterY = Number.isFinite(cy) ? cy : FRACTALS[state.fractalIdx].center[1];
+  state.targetPixelScale = Number.isFinite(pixelScale) && pixelScale > 0 ? pixelScale : fallback;
+  if (immediate) {
+    state.centerX = state.targetCenterX;
+    state.centerY = state.targetCenterY;
+    state.pixelScale = state.targetPixelScale;
+  }
+}
+
+function syncTargetToCurrent() {
+  setCameraTarget(state.centerX, state.centerY, state.pixelScale, true);
+}
+
+function nudgeCamera(dt) {
+  if (!state.targetPixelScale) return;
+  if (!state.pixelScale) {
+    syncTargetToCurrent();
+    return;
+  }
+
+  const alpha = 1 - Math.exp(-dt * CAMERA_EASE);
+  state.centerX += (state.targetCenterX - state.centerX) * alpha;
+  state.centerY += (state.targetCenterY - state.centerY) * alpha;
+
+  const currentLog = Math.log(state.pixelScale);
+  const targetLog = Math.log(state.targetPixelScale);
+  state.pixelScale = Math.exp(currentLog + (targetLog - currentLog) * alpha);
+
+  const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
+  if (Math.abs(state.targetCenterX - state.centerX) < viewWidth * 1e-7 &&
+      Math.abs(state.targetCenterY - state.centerY) < viewWidth * 1e-7 &&
+      Math.abs(Math.log(state.pixelScale / state.targetPixelScale)) < 1e-5) {
+    syncTargetToCurrent();
+  }
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
@@ -347,7 +403,7 @@ function resetView(idx) {
 function saveSettings() {
   try {
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    views[state.fractalIdx] = { cx: state.centerX, cy: state.centerY, ps: state.pixelScale };
+    views[state.fractalIdx] = { cx: state.targetCenterX, cy: state.targetCenterY, ps: state.targetPixelScale };
     localStorage.setItem(STORAGE_KEY + "_views", JSON.stringify(views));
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       fractalIdx: state.fractalIdx,
@@ -362,21 +418,22 @@ function saveSettings() {
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    if (s.fractalIdx !== undefined) state.fractalIdx = s.fractalIdx;
-    if (s.palette    !== undefined) state.palette    = s.palette;
-    if (s.iterations) ui.iterations.value = s.iterations;
+    if (s.fractalIdx !== undefined) state.fractalIdx = Math.max(0, Math.min(parseInt(s.fractalIdx, 10) || 0, FRACTALS.length - 1));
+    if (s.palette    !== undefined) state.palette    = Math.max(0, Math.min(parseInt(s.palette, 10) || 0, 4));
+    if (s.iterations) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(s.iterations, 10) || DEFAULT_ITER, MAX_ITER));
     if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
     if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[state.fractalIdx];
-    if (v) { state.centerX = v.cx; state.centerY = v.cy; state.pixelScale = v.ps; }
+    if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
+    else resetView(state.fractalIdx);
   } catch { /* ignore */ }
 }
 
 function saveViewForCurrentFractal() {
   try {
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    views[state.fractalIdx] = { cx: state.centerX, cy: state.centerY, ps: state.pixelScale };
+    views[state.fractalIdx] = { cx: state.targetCenterX, cy: state.targetCenterY, ps: state.targetPixelScale };
     localStorage.setItem(STORAGE_KEY + "_views", JSON.stringify(views));
   } catch { /* quota */ }
 }
@@ -386,8 +443,9 @@ function restoreViewForFractal(idx) {
   try {
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[idx];
-    if (v) { state.centerX = v.cx; state.centerY = v.cy; state.pixelScale = v.ps; }
+    if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
   } catch { /* ignore */ }
+  markMinimapDirty();
 }
 
 // ─── URL share ────────────────────────────────────────────────────────────────
@@ -396,9 +454,9 @@ function stateToParams() {
   return new URLSearchParams({
     f:  state.fractalIdx,
     pa: state.palette,
-    cx: state.centerX.toFixed(15),
-    cy: state.centerY.toFixed(15),
-    ps: state.pixelScale.toExponential(6),
+    cx: state.targetCenterX.toFixed(15),
+    cy: state.targetCenterY.toFixed(15),
+    ps: state.targetPixelScale.toExponential(6),
     it: ui.iterations.value,
     cc: ui.colorCycle.value,
     ja: ui.juliaAngle.value,
@@ -407,14 +465,16 @@ function stateToParams() {
 
 function loadFromParams() {
   const p = new URLSearchParams(window.location.search);
-  if (p.has("f"))  state.fractalIdx = Math.min(parseInt(p.get("f"), 10) || 0, FRACTALS.length - 1);
-  if (p.has("pa")) state.palette    = parseInt(p.get("pa"), 10) || 0;
+  if (p.has("f"))  state.fractalIdx = Math.max(0, Math.min(parseInt(p.get("f"), 10) || 0, FRACTALS.length - 1));
+  if (p.has("pa")) state.palette    = Math.max(0, Math.min(parseInt(p.get("pa"), 10) || 0, 4));
   if (p.has("cx")) state.centerX    = parseFloat(p.get("cx")) || 0;
   if (p.has("cy")) state.centerY    = parseFloat(p.get("cy")) || 0;
   if (p.has("ps")) state.pixelScale = parseFloat(p.get("ps")) || 0;
-  if (p.has("it")) ui.iterations.value = p.get("it");
+  if (p.has("it")) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(p.get("it"), 10) || DEFAULT_ITER, MAX_ITER));
   if (p.has("cc")) ui.colorCycle.value = p.get("cc");
   if (p.has("ja")) ui.juliaAngle.value = p.get("ja");
+  syncTargetToCurrent();
+  markMinimapDirty();
 }
 
 // ─── Resize ───────────────────────────────────────────────────────────────────
@@ -463,7 +523,254 @@ function getRenderIterations() {
   return Math.max(MIN_ITER, Math.min(MAX_ITER, requested + zoomBoost));
 }
 
+// ─── Minimap ─────────────────────────────────────────────────────────────────
+
+function markMinimapDirty() {
+  minimapDirty = true;
+}
+
+function resizeMinimap() {
+  if (!miniCtx || !minimapBaseCtx) return false;
+  const rect = minimap.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.floor(rect.width * dpr));
+  const h = Math.max(1, Math.floor(rect.height * dpr));
+  if (minimap.width !== w || minimap.height !== h) {
+    minimap.width = w;
+    minimap.height = h;
+    minimapBase.width = w;
+    minimapBase.height = h;
+    minimapDirty = true;
+  }
+  return true;
+}
+
+function cosinePalette(t, paletteIdx) {
+  const shifts = [
+    [0.00, 0.18, 0.36],
+    [0.46, 0.08, 0.02],
+    [0.04, 0.30, 0.22],
+    [0.28, 0.02, 0.38],
+    [0.38, 0.28, 0.04],
+  ][paletteIdx] || [0.00, 0.18, 0.36];
+  return shifts.map(shift => Math.round((0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255));
+}
+
+function previewEscape(fractalIdx, x, y) {
+  const jc = juliaC();
+  let zx = 0, zy = 0, cx = x, cy = y, px = 0, py = 0;
+
+  if (fractalIdx === 1) {
+    zx = x; zy = y; cx = jc[0]; cy = jc[1];
+  } else if (fractalIdx === 8) {
+    zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  }
+
+  for (let n = 0; n < MINIMAP_ITER; n++) {
+    let nx, ny;
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const xy = zx * zy;
+
+    if (fractalIdx === 2) {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      nx = ax * ax - ay * ay + cx;
+      ny = 2 * ax * ay + cy;
+    } else if (fractalIdx === 3) {
+      nx = x2 - y2 + cx;
+      ny = -2 * xy + cy;
+    } else if (fractalIdx === 4) {
+      nx = zx * (x2 - 3 * y2) + cx;
+      ny = zy * (3 * x2 - y2) + cy;
+    } else if (fractalIdx === 5) {
+      const qx = x2 - y2;
+      const qy = 2 * xy;
+      nx = qx * qx - qy * qy + cx;
+      ny = 2 * qx * qy + cy;
+    } else if (fractalIdx === 6) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = 2 * xy + cy;
+    } else if (fractalIdx === 7) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -Math.abs(2 * xy) + cy;
+    } else if (fractalIdx === 8) {
+      nx = x2 - y2 + cx - 0.45 * px;
+      ny = 2 * xy + cy;
+      px = zx; py = zy;
+    } else {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+    }
+
+    zx = nx; zy = ny;
+    if (zx * zx + zy * zy > 256) return n;
+  }
+  return MINIMAP_ITER;
+}
+
+function renderMinimapBackground() {
+  if (!resizeMinimap()) return;
+  const w = minimapBase.width;
+  const h = minimapBase.height;
+  const image = minimapBaseCtx.createImageData(w, h);
+  const f = FRACTALS[state.fractalIdx];
+  const scale = f.scale;
+  const left = f.center[0] - scale * 0.5;
+  const top = f.center[1] + scale * 0.5;
+
+  for (let py = 0; py < h; py++) {
+    const y = top - (py / Math.max(h - 1, 1)) * scale;
+    for (let px = 0; px < w; px++) {
+      const x = left + (px / Math.max(w - 1, 1)) * scale;
+      const iter = previewEscape(state.fractalIdx, x, y);
+      const offset = (py * w + px) * 4;
+      if (iter >= MINIMAP_ITER) {
+        image.data[offset] = 2;
+        image.data[offset + 1] = 5;
+        image.data[offset + 2] = 7;
+      } else {
+        const t = iter / MINIMAP_ITER + parseFloat(ui.colorCycle.value) * 0.08;
+        const [r, g, b] = cosinePalette(t, state.palette);
+        image.data[offset] = Math.round(r * 0.82);
+        image.data[offset + 1] = Math.round(g * 0.82);
+        image.data[offset + 2] = Math.round(b * 0.82);
+      }
+      image.data[offset + 3] = 255;
+    }
+  }
+
+  minimapBaseCtx.putImageData(image, 0, 0);
+  minimapDirty = false;
+}
+
+function mapWorldToMinimap(x, y) {
+  const f = FRACTALS[state.fractalIdx];
+  const scale = f.scale;
+  return {
+    x: ((x - (f.center[0] - scale * 0.5)) / scale) * minimap.width,
+    y: (((f.center[1] + scale * 0.5) - y) / scale) * minimap.height,
+  };
+}
+
+function drawMinimapViewport() {
+  const wWorld = canvas.width * state.pixelScale;
+  const hWorld = canvas.height * state.pixelScale;
+  const topLeft = mapWorldToMinimap(state.centerX - wWorld * 0.5, state.centerY + hWorld * 0.5);
+  const bottomRight = mapWorldToMinimap(state.centerX + wWorld * 0.5, state.centerY - hWorld * 0.5);
+  const x = Math.min(topLeft.x, bottomRight.x);
+  const y = Math.min(topLeft.y, bottomRight.y);
+  const w = Math.abs(bottomRight.x - topLeft.x);
+  const h = Math.abs(bottomRight.y - topLeft.y);
+  const cx = (topLeft.x + bottomRight.x) * 0.5;
+  const cy = (topLeft.y + bottomRight.y) * 0.5;
+
+  miniCtx.save();
+  miniCtx.strokeStyle = "rgba(125, 240, 192, 0.95)";
+  miniCtx.fillStyle = "rgba(125, 240, 192, 0.12)";
+  miniCtx.lineWidth = Math.max(1.5, minimap.width / 96);
+  if (w >= 5 && h >= 5) {
+    miniCtx.fillRect(x, y, w, h);
+    miniCtx.strokeRect(x, y, w, h);
+  } else {
+    const r = Math.max(5, minimap.width / 22);
+    miniCtx.beginPath();
+    miniCtx.moveTo(cx - r, cy);
+    miniCtx.lineTo(cx + r, cy);
+    miniCtx.moveTo(cx, cy - r);
+    miniCtx.lineTo(cx, cy + r);
+    miniCtx.stroke();
+    miniCtx.beginPath();
+    miniCtx.arc(cx, cy, Math.max(2, r * 0.28), 0, Math.PI * 2);
+    miniCtx.fill();
+  }
+  miniCtx.restore();
+}
+
+function drawMinimap() {
+  if (!miniCtx || !minimapBaseCtx) return;
+  resizeMinimap();
+  if (minimapDirty) renderMinimapBackground();
+  miniCtx.clearRect(0, 0, minimap.width, minimap.height);
+  miniCtx.drawImage(minimapBase, 0, 0);
+  drawMinimapViewport();
+}
+
 // ─── Input handlers ───────────────────────────────────────────────────────────
+
+function canvasPixelFromClient(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / Math.max(rect.width, 1);
+  const sy = canvas.height / Math.max(rect.height, 1);
+  return {
+    x: (clientX - rect.left) * sx,
+    y: (clientY - rect.top) * sy,
+  };
+}
+
+function worldAtClient(clientX, clientY, cx = state.targetCenterX, cy = state.targetCenterY, scale = state.targetPixelScale) {
+  const p = canvasPixelFromClient(clientX, clientY);
+  return {
+    x: (p.x - canvas.width * 0.5) * scale + cx,
+    y: (canvas.height * 0.5 - p.y) * scale + cy,
+  };
+}
+
+function anchorTargetAtClient(clientX, clientY, worldX, worldY, scale) {
+  const p = canvasPixelFromClient(clientX, clientY);
+  setCameraTarget(
+    worldX - (p.x - canvas.width * 0.5) * scale,
+    worldY - (canvas.height * 0.5 - p.y) * scale,
+    scale
+  );
+}
+
+function zoomTargetAtClient(clientX, clientY, factor) {
+  const anchor = worldAtClient(clientX, clientY);
+  anchorTargetAtClient(clientX, clientY, anchor.x, anchor.y, state.targetPixelScale * factor);
+}
+
+function pointerList() {
+  return Array.from(activePointers.values());
+}
+
+function pointerDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function pointerMidpoint(a, b) {
+  return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+}
+
+function beginPanFromPointer(p) {
+  state.dragging = true;
+  state.dragStartX = p.x;
+  state.dragStartY = p.y;
+  state.dragStartCX = state.targetCenterX;
+  state.dragStartCY = state.targetCenterY;
+}
+
+function beginPinch() {
+  const points = pointerList();
+  if (points.length < 2) return;
+  const a = points[0], b = points[1];
+  const mid = pointerMidpoint(a, b);
+  const anchor = worldAtClient(mid.x, mid.y);
+  state.dragging = false;
+  gesture.pinchStartDist = Math.max(pointerDistance(a, b), 1);
+  gesture.pinchStartScale = state.targetPixelScale;
+  gesture.pinchAnchorX = anchor.x;
+  gesture.pinchAnchorY = anchor.y;
+}
+
+function updatePinch() {
+  const points = pointerList();
+  if (points.length < 2) return;
+  const a = points[0], b = points[1];
+  const mid = pointerMidpoint(a, b);
+  const dist = Math.max(pointerDistance(a, b), 1);
+  const nextScale = gesture.pinchStartScale * gesture.pinchStartDist / dist;
+  anchorTargetAtClient(mid.x, mid.y, gesture.pinchAnchorX, gesture.pinchAnchorY, nextScale);
+}
 
 function switchFractal() {
   saveViewForCurrentFractal();
@@ -481,32 +788,48 @@ function share() {
 }
 
 canvas.addEventListener("pointerdown", e => {
-  state.dragging = true;
-  state.dragStartX = e.clientX; state.dragStartY = e.clientY;
-  state.dragStartCX = state.centerX; state.dragStartCY = state.centerY;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
+  if (activePointers.size >= 2) beginPinch();
+  else beginPanFromPointer({ x: e.clientX, y: e.clientY });
+  e.preventDefault();
 });
+
 canvas.addEventListener("pointermove", e => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size >= 2) {
+    updatePinch();
+    return;
+  }
   if (!state.dragging) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  state.centerX = state.dragStartCX - (e.clientX - state.dragStartX) * dpr * state.pixelScale;
-  state.centerY = state.dragStartCY + (e.clientY - state.dragStartY) * dpr * state.pixelScale;
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / Math.max(rect.width, 1);
+  const sy = canvas.height / Math.max(rect.height, 1);
+  setCameraTarget(
+    state.dragStartCX - (e.clientX - state.dragStartX) * sx * state.targetPixelScale,
+    state.dragStartCY + (e.clientY - state.dragStartY) * sy * state.targetPixelScale,
+    state.targetPixelScale
+  );
 });
-canvas.addEventListener("pointerup", e => {
+
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
   state.dragging = false;
-  canvas.releasePointerCapture(e.pointerId);
+  try { canvas.releasePointerCapture(e.pointerId); } catch { /* pointer already released */ }
+  const remaining = pointerList();
+  if (remaining.length >= 2) beginPinch();
+  else if (remaining.length === 1) beginPanFromPointer(remaining[0]);
   saveSettings();
-});
+}
+
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
 
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const factor = e.deltaY > 0 ? 1.12 : 1 / 1.12;
-  const cx = (e.offsetX * dpr - canvas.width  * 0.5) * state.pixelScale + state.centerX;
-  const cy = (canvas.height * 0.5 - e.offsetY * dpr) * state.pixelScale + state.centerY;
-  state.pixelScale *= factor;
-  state.centerX = cx - (e.offsetX * dpr - canvas.width  * 0.5) * state.pixelScale;
-  state.centerY = cy - (canvas.height * 0.5 - e.offsetY * dpr) * state.pixelScale;
+  const factor = Math.pow(1.0015, e.deltaY);
+  zoomTargetAtClient(e.clientX, e.clientY, factor);
   saveSettings();
 }, { passive: false });
 
@@ -514,51 +837,39 @@ const keys = {};
 window.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "KeyF") switchFractal();
-  if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; saveSettings(); }
+  if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); saveSettings(); }
   if (e.code === "KeyR") { resetView(); saveSettings(); }
   if (e.code === "KeyC") share();
 });
 window.addEventListener("keyup", e => { keys[e.code] = false; });
 
-let lastPinchDist = 0;
-canvas.addEventListener("touchstart", e => {
-  if (e.touches.length === 2) {
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    lastPinchDist = Math.sqrt(dx*dx + dy*dy);
-  }
-}, { passive: true });
-canvas.addEventListener("touchmove", e => {
-  if (e.touches.length === 2) {
-    e.preventDefault();
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    state.pixelScale *= lastPinchDist / dist;
-    lastPinchDist = dist;
-  }
-}, { passive: false });
-
 ui.btnFractal.addEventListener("click", switchFractal);
-ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; saveSettings(); });
+ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); saveSettings(); });
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
 ui.btnShare.addEventListener("click",   share);
 ["iterations","colorCycle","juliaAngle"].forEach(id => {
-  ui[id].addEventListener("input", saveSettings);
+  ui[id].addEventListener("input", () => {
+    if (id !== "iterations") markMinimapDirty();
+    saveSettings();
+  });
 });
 window.addEventListener("resize", resize);
 
 // ─── Keyboard pan/zoom ────────────────────────────────────────────────────────
 
 function applyKeyboard(dt) {
-  const panSpeed  = state.pixelScale * canvas.width * dt * 0.6;
+  const panSpeed  = state.targetPixelScale * canvas.width * dt * 0.6;
   const zoomSpeed = Math.pow(2, dt * 1.5);
-  if (keys["ArrowLeft"]  || keys["KeyA"]) state.centerX -= panSpeed;
-  if (keys["ArrowRight"] || keys["KeyD"]) state.centerX += panSpeed;
-  if (keys["ArrowUp"]    || keys["KeyW"]) state.centerY += panSpeed;
-  if (keys["ArrowDown"]  || keys["KeyS"]) state.centerY -= panSpeed;
-  if (keys["Equal"] || keys["NumpadAdd"])      state.pixelScale /= zoomSpeed;
-  if (keys["Minus"] || keys["NumpadSubtract"]) state.pixelScale *= zoomSpeed;
+  let cx = state.targetCenterX;
+  let cy = state.targetCenterY;
+  let ps = state.targetPixelScale;
+  if (keys["ArrowLeft"]  || keys["KeyA"]) cx -= panSpeed;
+  if (keys["ArrowRight"] || keys["KeyD"]) cx += panSpeed;
+  if (keys["ArrowUp"]    || keys["KeyW"]) cy += panSpeed;
+  if (keys["ArrowDown"]  || keys["KeyS"]) cy -= panSpeed;
+  if (keys["Equal"] || keys["NumpadAdd"])      ps /= zoomSpeed;
+  if (keys["Minus"] || keys["NumpadSubtract"]) ps *= zoomSpeed;
+  setCameraTarget(cx, cy, ps);
 }
 
 // ─── Triple-single split ──────────────────────────────────────────────────────
@@ -578,6 +889,7 @@ function render(now) {
   state.lastTime = now;
 
   applyKeyboard(dt);
+  nudgeCamera(dt);
 
   state.fpsFrames++;
   if (now - state.fpsTime > 500) {
@@ -611,6 +923,7 @@ function render(now) {
   gl.uniform2f(loc.juliaC, jc[0], jc[1]);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+  drawMinimap();
   requestAnimationFrame(render);
 }
 

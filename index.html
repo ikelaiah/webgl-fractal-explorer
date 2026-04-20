@@ -9,6 +9,7 @@
   <body>
     <main class="shell">
       <canvas id="fractal" aria-label="Interactive 2D fractal explorer"></canvas>
+      <canvas id="minimap" aria-label="Fractal overview minimap"></canvas>
 
       <section class="hud" aria-label="Fractal controls">
         <div class="brand">
@@ -37,7 +38,7 @@
         <div class="control-grid">
           <label>
             <span>Iterations</span>
-            <input id="iterations" type="range" min="32" max="2048" step="8" value="256">
+            <input id="iterations" type="range" min="32" max="1024" step="8" value="256">
           </label>
           <label>
             <span>Color</span>
@@ -60,6 +61,7 @@
       <section class="tips" aria-label="Input hints">
         <span>Drag to pan</span>
         <span>Scroll to zoom</span>
+        <span>Pinch to zoom</span>
         <span>F — switch fractal</span>
         <span>P — palette</span>
         <span>R — reset</span>

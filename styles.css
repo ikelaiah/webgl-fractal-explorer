@@ -51,6 +51,20 @@ input {
   cursor: grabbing;
 }
 
+#minimap {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  pointer-events: none;
+  width: 168px;
+  height: 168px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 14, 18, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.34);
+}
+
 .hud {
   position: absolute;
   top: 20px;
@@ -198,6 +212,14 @@ button:focus-visible {
     padding: 14px;
   }
 
+  #minimap {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    width: 116px;
+    height: 116px;
+  }
+
   .readouts {
     margin: 14px 0;
   }
@@ -207,8 +229,10 @@ button:focus-visible {
   }
 
   .tips {
-    right: 12px;
+    right: auto;
+    left: 12px;
     bottom: 12px;
     justify-content: flex-start;
+    max-width: calc(100vw - 152px);
   }
 }
