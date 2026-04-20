@@ -32,6 +32,7 @@ uniform float uPalette;
 uniform float uCycle;
 uniform vec2  uJuliaC;
 
+#define MAX_ITER 4096
 #define PI  3.14159265359
 #define TAU 6.28318530718
 
@@ -77,7 +78,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 1024; n++) {
+  for (int n = 0; n < MAX_ITER; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
     if (dot(z, z) > 256.0) break;
@@ -94,7 +95,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 c = uJuliaC;
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 1024; n++) {
+  for (int n = 0; n < MAX_ITER; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
     if (dot(z, z) > 256.0) break;
@@ -111,7 +112,7 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 1024; n++) {
+  for (int n = 0; n < MAX_ITER; n++) {
     if (n >= uIter) break;
     z = vec2(abs(z.x), abs(z.y));
     z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
@@ -129,9 +130,101 @@ void main() {
                 worldCoord(uY0, gl_FragCoord.y));
   vec2 z = vec2(0.0);
   float i = 0.0, mi = float(uIter);
-  for (int n = 0; n < 1024; n++) {
+  for (int n = 0; n < MAX_ITER; n++) {
     if (n >= uIter) break;
     z = vec2(z.x*z.x - z.y*z.y, -2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Cubic Multibrot ----------------------------------------------------------
+const cubicMultibrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    z = vec2(z.x * (x2 - 3.0 * y2), z.y * (3.0 * x2 - y2)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Quartic Multibrot --------------------------------------------------------
+const quarticMultibrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    z = vec2(z2.x*z2.x - z2.y*z2.y, 2.0*z2.x*z2.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Celtic Mandelbrot --------------------------------------------------------
+const celticFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Buffalo ------------------------------------------------------------------
+const buffaloFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), -abs(2.0*z.x*z.y)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Phoenix Julia ------------------------------------------------------------
+const phoenixFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = vec2(-0.5, 0.0) + 0.32 * uJuliaC;
+  vec2 p = vec2(-0.45, 0.0);
+  vec2 prev = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 next = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c + p * prev;
+    prev = z;
+    z = next;
     if (dot(z, z) > 256.0) break;
     i += 1.0;
   }
@@ -142,10 +235,15 @@ void main() {
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
-  { name: "Mandelbrot Set",     src: mandelbrotFrag,  center: [-0.5, 0.0], scale: 3.5, julia: false },
-  { name: "Julia Set",          src: juliaFrag,       center: [0.0,  0.0], scale: 3.5, julia: true  },
-  { name: "Burning Ship",       src: burningShipFrag, center: [-0.5,-0.5], scale: 3.5, julia: false },
-  { name: "Tricorn (Mandelbar)",src: tricornFrag,     center: [0.0,  0.0], scale: 3.5, julia: false },
+  { name: "Mandelbrot Set",      src: mandelbrotFrag,       center: [-0.5, 0.0], scale: 3.5, julia: false },
+  { name: "Julia Set",           src: juliaFrag,            center: [0.0,  0.0], scale: 3.5, julia: true  },
+  { name: "Burning Ship",        src: burningShipFrag,      center: [-0.5,-0.5], scale: 3.5, julia: false },
+  { name: "Tricorn (Mandelbar)", src: tricornFrag,          center: [0.0,  0.0], scale: 3.5, julia: false },
+  { name: "Cubic Multibrot",     src: cubicMultibrotFrag,   center: [0.0,  0.0], scale: 3.0, julia: false },
+  { name: "Quartic Multibrot",   src: quarticMultibrotFrag, center: [0.0,  0.0], scale: 3.0, julia: false },
+  { name: "Celtic Mandelbrot",   src: celticFrag,           center: [-0.2, 0.0], scale: 3.2, julia: false },
+  { name: "Buffalo",             src: buffaloFrag,          center: [-0.2, 0.0], scale: 3.2, julia: false },
+  { name: "Phoenix Julia",       src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true  },
 ];
 
 // ─── WebGL helpers ────────────────────────────────────────────────────────────
@@ -219,6 +317,9 @@ const ui = {
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "fractal2d_v1";
+const MIN_ITER = 32;
+const MAX_ITER = 4096;
+const DEFAULT_ITER = 256;
 
 const state = {
   fractalIdx: 0,
@@ -342,13 +443,24 @@ function updateUI() {
   const f = FRACTALS[state.fractalIdx];
   ui.fractalName.textContent = f.name;
   ui.juliaRow.style.display  = f.julia ? "" : "none";
-  ui.iterReadout.textContent = ui.iterations.value;
+  ui.iterReadout.textContent = getRenderIterations();
   const zoom = FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1));
   ui.zoomReadout.textContent = zoom >= 1e6
     ? (zoom / 1e6).toFixed(2) + "M×"
     : zoom >= 1000
     ? (zoom / 1000).toFixed(1) + "k×"
     : zoom.toFixed(zoom < 10 ? 2 : 0) + "×";
+}
+
+function getZoom() {
+  return FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1));
+}
+
+function getRenderIterations() {
+  const requested = parseInt(ui.iterations.value, 10) || DEFAULT_ITER;
+  const zoom = Math.max(1, getZoom());
+  const zoomBoost = Math.floor(Math.log2(zoom) * 32);
+  return Math.max(MIN_ITER, Math.min(MAX_ITER, requested + zoomBoost));
 }
 
 // ─── Input handlers ───────────────────────────────────────────────────────────
@@ -493,7 +605,7 @@ function render(now) {
   gl.uniform3f(loc.x0,    x0Hi, x0Mid, x0Lo);
   gl.uniform3f(loc.y0,    y0Hi, y0Mid, y0Lo);
   gl.uniform1f(loc.scale,  state.pixelScale);
-  gl.uniform1i(loc.iter,   parseInt(ui.iterations.value, 10));
+  gl.uniform1i(loc.iter,   getRenderIterations());
   gl.uniform1f(loc.palette, state.palette);
   gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
   gl.uniform2f(loc.juliaC, jc[0], jc[1]);
