@@ -32,7 +32,7 @@ uniform float uPalette;
 uniform float uCycle;
 uniform vec2  uJuliaC;
 
-#define MAX_ITER 4096
+#define MAX_ITER 2048
 #define PI  3.14159265359
 #define TAU 6.28318530718
 
@@ -318,7 +318,7 @@ const ui = {
 
 const STORAGE_KEY = "fractal2d_v1";
 const MIN_ITER = 32;
-const MAX_ITER = 4096;
+const MAX_ITER = 2048;
 const DEFAULT_ITER = 256;
 
 const state = {
