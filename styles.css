@@ -45,16 +45,28 @@ input {
   display: block;
   cursor: grab;
   touch-action: none;
+  z-index: 0;
 }
 
 #fractal:active {
   cursor: grabbing;
 }
 
+#deepFractal {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
 #minimap {
   position: absolute;
   top: 20px;
   right: 20px;
+  z-index: 3;
   pointer-events: none;
   width: 168px;
   height: 168px;
@@ -69,7 +81,8 @@ input {
   position: absolute;
   top: 20px;
   left: 20px;
-  width: min(360px, calc(100vw - 40px));
+  z-index: 4;
+  width: min(540px, calc(100vw - 40px));
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -112,7 +125,7 @@ p {
 
 .readouts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(92px, 1fr) minmax(76px, 0.8fr) minmax(92px, 1fr) minmax(150px, 1.45fr);
   gap: 10px;
   margin: 18px 0;
 }
@@ -136,8 +149,9 @@ label span {
 .readouts strong {
   display: block;
   margin-top: 5px;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .control-grid {
@@ -147,7 +161,7 @@ label span {
 
 label {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: 92px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
 }
@@ -159,7 +173,7 @@ input[type="range"] {
 
 .buttons {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-top: 18px;
 }
@@ -173,16 +187,27 @@ button {
   cursor: pointer;
 }
 
+.buttons button {
+  padding: 0 6px;
+  font-size: 0.86rem;
+}
+
 button:hover,
 button:focus-visible {
   border-color: rgba(125, 240, 192, 0.75);
   outline: none;
 }
 
+button.active {
+  border-color: rgba(125, 240, 192, 0.9);
+  background: rgba(125, 240, 192, 0.16);
+}
+
 .tips {
   position: absolute;
   right: 20px;
   bottom: 20px;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;

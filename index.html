@@ -9,6 +9,7 @@
   <body>
     <main class="shell">
       <canvas id="fractal" aria-label="Interactive 2D fractal explorer"></canvas>
+      <canvas id="deepFractal" aria-label="High precision fractal refinement"></canvas>
       <canvas id="minimap" aria-label="Fractal overview minimap"></canvas>
 
       <section class="hud" aria-label="Fractal controls">
@@ -33,6 +34,10 @@
             <span>Iter</span>
             <strong id="iterReadout">256</strong>
           </div>
+          <div>
+            <span>Mode</span>
+            <strong id="modeReadout">GPU</strong>
+          </div>
         </div>
 
         <div class="control-grid">
@@ -53,6 +58,7 @@
         <div class="buttons" role="group" aria-label="Mode controls">
           <button id="btnFractal" type="button" title="Switch fractal (F)">Fractal</button>
           <button id="btnPalette" type="button" title="Change palette (P)">Palette</button>
+          <button id="btnRefine"  type="button" title="Toggle CPU refinement">Refine</button>
           <button id="btnReset"   type="button" title="Reset view (R)">Reset</button>
           <button id="btnShare"   type="button" title="Copy link (C)">Share</button>
         </div>

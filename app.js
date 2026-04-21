@@ -1,6 +1,7 @@
 "use strict";
 
 const canvas = document.getElementById("fractal");
+const deepCanvas = document.getElementById("deepFractal");
 const minimap = document.getElementById("minimap");
 const gl = canvas.getContext("webgl", {
   antialias: false,
@@ -8,6 +9,7 @@ const gl = canvas.getContext("webgl", {
   stencil: false,
   preserveDrawingBuffer: false,
 });
+const deepCtx = deepCanvas.getContext("2d", { alpha: true });
 const miniCtx = minimap.getContext("2d");
 const minimapBase = document.createElement("canvas");
 const minimapBaseCtx = minimapBase.getContext("2d");
@@ -308,12 +310,14 @@ const ui = {
   zoomReadout: document.getElementById("zoomReadout"),
   fpsReadout:  document.getElementById("fpsReadout"),
   iterReadout: document.getElementById("iterReadout"),
+  modeReadout: document.getElementById("modeReadout"),
   iterations:  document.getElementById("iterations"),
   colorCycle:  document.getElementById("colorCycle"),
   juliaRow:    document.getElementById("juliaRow"),
   juliaAngle:  document.getElementById("juliaAngle"),
   btnFractal:  document.getElementById("btnFractal"),
   btnPalette:  document.getElementById("btnPalette"),
+  btnRefine:   document.getElementById("btnRefine"),
   btnReset:    document.getElementById("btnReset"),
   btnShare:    document.getElementById("btnShare"),
 };
@@ -326,10 +330,18 @@ const MAX_ITER = 1024;
 const DEFAULT_ITER = 256;
 const CAMERA_EASE = 12;
 const MINIMAP_ITER = 56;
+const CPU_DPR = 1;
+const CPU_FRAME_BUDGET_MS = 10;
+const CPU_REFINE_DELAY_MS = 180;
+const CPU_PASSES = [8, 4, 2, 1];
+const CPU_MAX_WORKERS = 8;
+const CPU_WORKER_COUNT_OVERRIDE = 8;
+const CPU_WORKER_BATCH_BLOCKS = 4096;
 
 const state = {
   fractalIdx: 0,
   palette: 0,
+  cpuRefine: true,
   centerX: FRACTALS[0].center[0],
   centerY: FRACTALS[0].center[1],
   pixelScale: 0,
@@ -353,6 +365,29 @@ const gesture = {
 };
 
 let minimapDirty = true;
+const cpuRender = {
+  dirty: true,
+  running: false,
+  complete: false,
+  dirtySince: performance.now(),
+  generation: 0,
+  activeGeneration: 0,
+  imageData: null,
+  pixels: null,
+  passIndex: 0,
+  blockIndex: 0,
+  cols: 0,
+  rows: 0,
+  step: 1,
+  snapshot: null,
+  workers: [],
+  workerUrl: "",
+  pendingBatches: 0,
+  nextBatchBlock: 0,
+  totalBlocks: 0,
+  lastPaint: 0,
+  useWorkers: false,
+};
 
 function resetView(idx) {
   const f = FRACTALS[idx ?? state.fractalIdx];
@@ -361,14 +396,26 @@ function resetView(idx) {
 
 function setCameraTarget(cx, cy, pixelScale, immediate = false) {
   const fallback = FRACTALS[state.fractalIdx].scale / Math.max(canvas.width || 800, 1);
-  state.targetCenterX = Number.isFinite(cx) ? cx : FRACTALS[state.fractalIdx].center[0];
-  state.targetCenterY = Number.isFinite(cy) ? cy : FRACTALS[state.fractalIdx].center[1];
-  state.targetPixelScale = Number.isFinite(pixelScale) && pixelScale > 0 ? pixelScale : fallback;
+  const nextX = Number.isFinite(cx) ? cx : FRACTALS[state.fractalIdx].center[0];
+  const nextY = Number.isFinite(cy) ? cy : FRACTALS[state.fractalIdx].center[1];
+  const nextScale = Number.isFinite(pixelScale) && pixelScale > 0 ? pixelScale : fallback;
+  const centerChanged = immediate && (
+    state.centerX !== nextX ||
+    state.centerY !== nextY ||
+    state.pixelScale !== nextScale
+  );
+  const changed = nextX !== state.targetCenterX ||
+    nextY !== state.targetCenterY ||
+    nextScale !== state.targetPixelScale;
+  state.targetCenterX = nextX;
+  state.targetCenterY = nextY;
+  state.targetPixelScale = nextScale;
   if (immediate) {
     state.centerX = state.targetCenterX;
     state.centerY = state.targetCenterY;
     state.pixelScale = state.targetPixelScale;
   }
+  if (changed || centerChanged) markDeepDirty(true);
 }
 
 function syncTargetToCurrent() {
@@ -411,6 +458,7 @@ function saveSettings() {
       iterations: ui.iterations.value,
       colorCycle: ui.colorCycle.value,
       juliaAngle: ui.juliaAngle.value,
+      cpuRefine: state.cpuRefine,
     }));
   } catch { /* quota */ }
 }
@@ -423,6 +471,7 @@ function loadSettings() {
     if (s.iterations) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(s.iterations, 10) || DEFAULT_ITER, MAX_ITER));
     if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
     if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
+    if (s.cpuRefine !== undefined) state.cpuRefine = !!s.cpuRefine;
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[state.fractalIdx];
     if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
@@ -488,6 +537,13 @@ function resize() {
     gl.viewport(0, 0, w, h);
     if (!state.pixelScale) resetView();
   }
+  const deepW = Math.max(1, Math.floor(deepCanvas.clientWidth * CPU_DPR));
+  const deepH = Math.max(1, Math.floor(deepCanvas.clientHeight * CPU_DPR));
+  if (deepCanvas.width !== deepW || deepCanvas.height !== deepH) {
+    deepCanvas.width = deepW;
+    deepCanvas.height = deepH;
+    markDeepDirty(true);
+  }
 }
 
 // ─── Julia C ──────────────────────────────────────────────────────────────────
@@ -504,12 +560,23 @@ function updateUI() {
   ui.fractalName.textContent = f.name;
   ui.juliaRow.style.display  = f.julia ? "" : "none";
   ui.iterReadout.textContent = getRenderIterations();
+  ui.modeReadout.textContent = getRenderModeLabel();
+  ui.btnRefine.classList.toggle("active", state.cpuRefine);
   const zoom = FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1));
   ui.zoomReadout.textContent = zoom >= 1e6
     ? (zoom / 1e6).toFixed(2) + "M×"
     : zoom >= 1000
     ? (zoom / 1000).toFixed(1) + "k×"
     : zoom.toFixed(zoom < 10 ? 2 : 0) + "×";
+}
+
+function getRenderModeLabel() {
+  if (!state.cpuRefine || !deepCtx) return "GPU";
+  if (cpuRender.running) return cpuRender.useWorkers
+    ? `x${cpuRender.workers.length} CPU`
+    : "CPU...";
+  if (cpuRender.complete && !cpuRender.dirty) return "CPU";
+  return "GPU";
 }
 
 function getZoom() {
@@ -695,6 +762,437 @@ function drawMinimap() {
   drawMinimapViewport();
 }
 
+// ─── CPU refinement ───────────────────────────────────────────────────────────
+
+function markDeepDirty(clear = false) {
+  if (cpuRender.running) cancelCpuWorkers();
+  cpuRender.dirty = true;
+  cpuRender.complete = false;
+  cpuRender.dirtySince = performance.now();
+  cpuRender.generation++;
+  cpuRender.running = false;
+  if (clear && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+}
+
+function isCameraSettled() {
+  if (!state.pixelScale || !state.targetPixelScale) return false;
+  const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
+  return Math.abs(state.targetCenterX - state.centerX) < viewWidth * 1e-7 &&
+    Math.abs(state.targetCenterY - state.centerY) < viewWidth * 1e-7 &&
+    Math.abs(Math.log(state.pixelScale / state.targetPixelScale)) < 1e-5;
+}
+
+function cancelCpuWorkers() {
+  cpuRender.workers.forEach(entry => entry.worker.terminate());
+  cpuRender.workers = [];
+  cpuRender.pendingBatches = 0;
+  cpuRender.useWorkers = false;
+}
+
+function getCpuWorkerCount() {
+  if (CPU_WORKER_COUNT_OVERRIDE > 0) return Math.min(CPU_MAX_WORKERS, CPU_WORKER_COUNT_OVERRIDE);
+  const cores = navigator.hardwareConcurrency || 4;
+  return Math.max(1, Math.min(CPU_MAX_WORKERS, cores));
+}
+
+function cpuWorkerSource() {
+  return `
+const TAU = Math.PI * 2;
+
+function cpuEscape(fractalIdx, x, y, maxIter, jc) {
+  let zx = 0, zy = 0, cx = x, cy = y, px = 0;
+
+  if (fractalIdx === 1) {
+    zx = x; zy = y; cx = jc[0]; cy = jc[1];
+  } else if (fractalIdx === 8) {
+    zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  }
+
+  for (let n = 0; n < maxIter; n++) {
+    let nx, ny;
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const xy = zx * zy;
+
+    if (fractalIdx === 2) {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      nx = ax * ax - ay * ay + cx;
+      ny = 2 * ax * ay + cy;
+    } else if (fractalIdx === 3) {
+      nx = x2 - y2 + cx;
+      ny = -2 * xy + cy;
+    } else if (fractalIdx === 4) {
+      nx = zx * (x2 - 3 * y2) + cx;
+      ny = zy * (3 * x2 - y2) + cy;
+    } else if (fractalIdx === 5) {
+      const qx = x2 - y2;
+      const qy = 2 * xy;
+      nx = qx * qx - qy * qy + cx;
+      ny = 2 * qx * qy + cy;
+    } else if (fractalIdx === 6) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = 2 * xy + cy;
+    } else if (fractalIdx === 7) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -Math.abs(2 * xy) + cy;
+    } else if (fractalIdx === 8) {
+      nx = x2 - y2 + cx - 0.45 * px;
+      ny = 2 * xy + cy;
+      px = zx;
+    } else {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+    }
+
+    zx = nx; zy = ny;
+    const mag2 = zx * zx + zy * zy;
+    if (mag2 > 256) return { iter: n + 1, mag2 };
+  }
+
+  return { iter: maxIter, mag2: zx * zx + zy * zy };
+}
+
+function cpuColor(sample, maxIter, paletteIdx, cycle) {
+  if (sample.iter >= maxIter) return [0, 0, 0];
+  const sm = sample.iter - Math.log2(Math.max(1, Math.log2(sample.mag2))) + 4;
+  const t = sm / maxIter + cycle;
+  const shifts = [
+    [0.00, 0.18, 0.36],
+    [0.46, 0.08, 0.02],
+    [0.04, 0.30, 0.22],
+    [0.28, 0.02, 0.38],
+    [0.38, 0.28, 0.04],
+  ][paletteIdx] || [0.00, 0.18, 0.36];
+  return shifts.map(shift => Math.round((0.5 + 0.5 * Math.cos(TAU * (t + shift))) * 255));
+}
+
+self.onmessage = event => {
+  const { generation, passIndex, snapshot, step, cols, totalBlocks, startBlock, count } = event.data;
+  const actualCount = Math.min(count, totalBlocks - startBlock);
+  const colors = new Uint8ClampedArray(actualCount * 4);
+
+  for (let i = 0; i < actualCount; i++) {
+    const blockIndex = startBlock + i;
+    const col = blockIndex % cols;
+    const row = Math.floor(blockIndex / cols);
+    const xStart = col * step;
+    const yStart = row * step;
+    const sampleX = Math.min(xStart + step * 0.5, snapshot.width - 0.5);
+    const sampleY = Math.min(yStart + step * 0.5, snapshot.height - 0.5);
+    const worldX = snapshot.x0 + sampleX * snapshot.scale;
+    const worldY = snapshot.y1 - sampleY * snapshot.scale;
+    const color = cpuColor(
+      cpuEscape(snapshot.fractalIdx, worldX, worldY, snapshot.iter, snapshot.juliaC),
+      snapshot.iter,
+      snapshot.palette,
+      snapshot.cycle
+    );
+    const p = i * 4;
+    colors[p] = color[0];
+    colors[p + 1] = color[1];
+    colors[p + 2] = color[2];
+    colors[p + 3] = 255;
+  }
+
+  self.postMessage({ generation, passIndex, startBlock, colors }, [colors.buffer]);
+};
+`;
+}
+
+function ensureCpuWorkers() {
+  if (typeof Worker === "undefined" || typeof Blob === "undefined" || typeof URL === "undefined") return false;
+  if (cpuRender.workers.length) return true;
+
+  try {
+    if (!cpuRender.workerUrl) {
+      cpuRender.workerUrl = URL.createObjectURL(new Blob([cpuWorkerSource()], { type: "application/javascript" }));
+    }
+    const workerCount = getCpuWorkerCount();
+    for (let i = 0; i < workerCount; i++) {
+      const entry = { worker: new Worker(cpuRender.workerUrl), busy: false };
+      entry.worker.onmessage = event => onCpuWorkerMessage(entry, event.data);
+      entry.worker.onerror = err => {
+        console.error("CPU worker failed", err);
+        cancelCpuWorkers();
+        if (cpuRender.running && !cpuRender.dirty) {
+          cpuRender.useWorkers = false;
+          requestAnimationFrame(() => processCpuRenderMain(cpuRender.activeGeneration));
+        }
+      };
+      cpuRender.workers.push(entry);
+    }
+    return true;
+  } catch (err) {
+    console.warn("CPU workers unavailable; falling back to main-thread refinement.", err);
+    cancelCpuWorkers();
+    return false;
+  }
+}
+
+function cpuEscape(fractalIdx, x, y, maxIter, jc) {
+  let zx = 0, zy = 0, cx = x, cy = y, px = 0;
+
+  if (fractalIdx === 1) {
+    zx = x; zy = y; cx = jc[0]; cy = jc[1];
+  } else if (fractalIdx === 8) {
+    zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  }
+
+  for (let n = 0; n < maxIter; n++) {
+    let nx, ny;
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const xy = zx * zy;
+
+    if (fractalIdx === 2) {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      nx = ax * ax - ay * ay + cx;
+      ny = 2 * ax * ay + cy;
+    } else if (fractalIdx === 3) {
+      nx = x2 - y2 + cx;
+      ny = -2 * xy + cy;
+    } else if (fractalIdx === 4) {
+      nx = zx * (x2 - 3 * y2) + cx;
+      ny = zy * (3 * x2 - y2) + cy;
+    } else if (fractalIdx === 5) {
+      const qx = x2 - y2;
+      const qy = 2 * xy;
+      nx = qx * qx - qy * qy + cx;
+      ny = 2 * qx * qy + cy;
+    } else if (fractalIdx === 6) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = 2 * xy + cy;
+    } else if (fractalIdx === 7) {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -Math.abs(2 * xy) + cy;
+    } else if (fractalIdx === 8) {
+      nx = x2 - y2 + cx - 0.45 * px;
+      ny = 2 * xy + cy;
+      px = zx;
+    } else {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+    }
+
+    zx = nx; zy = ny;
+    const mag2 = zx * zx + zy * zy;
+    if (mag2 > 256) return { iter: n + 1, zx, zy, mag2 };
+  }
+
+  return { iter: maxIter, zx, zy, mag2: zx * zx + zy * zy };
+}
+
+function cpuColor(sample, maxIter, paletteIdx, cycle) {
+  if (sample.iter >= maxIter) return [0, 0, 0];
+  const sm = sample.iter - Math.log2(Math.max(1, Math.log2(sample.mag2))) + 4;
+  const t = sm / maxIter + cycle;
+  const shifts = [
+    [0.00, 0.18, 0.36],
+    [0.46, 0.08, 0.02],
+    [0.04, 0.30, 0.22],
+    [0.28, 0.02, 0.38],
+    [0.38, 0.28, 0.04],
+  ][paletteIdx] || [0.00, 0.18, 0.36];
+  return shifts.map(shift => Math.round((0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255));
+}
+
+function makeCpuSnapshot() {
+  const worldWidth = canvas.width * state.pixelScale;
+  const worldHeight = canvas.height * state.pixelScale;
+  const scale = worldWidth / Math.max(deepCanvas.width, 1);
+  return {
+    fractalIdx: state.fractalIdx,
+    palette: state.palette,
+    cycle: parseFloat(ui.colorCycle.value) || 0,
+    iter: getRenderIterations(),
+    width: deepCanvas.width,
+    height: deepCanvas.height,
+    x0: state.centerX - worldWidth * 0.5,
+    y1: state.centerY + worldHeight * 0.5,
+    scale,
+    juliaC: juliaC(),
+  };
+}
+
+function startCpuRender() {
+  if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
+  const generation = ++cpuRender.generation;
+  cpuRender.running = true;
+  cpuRender.dirty = false;
+  cpuRender.complete = false;
+  cpuRender.activeGeneration = generation;
+  cpuRender.imageData = deepCtx.createImageData(deepCanvas.width, deepCanvas.height);
+  cpuRender.pixels = cpuRender.imageData.data;
+  cpuRender.passIndex = 0;
+  cpuRender.blockIndex = 0;
+  cpuRender.snapshot = makeCpuSnapshot();
+  cpuRender.lastPaint = 0;
+  cpuRender.useWorkers = ensureCpuWorkers();
+  setupCpuPass();
+  if (cpuRender.useWorkers) dispatchCpuWorkerBatches();
+  else requestAnimationFrame(() => processCpuRenderMain(generation));
+}
+
+function setupCpuPass() {
+  cpuRender.step = CPU_PASSES[cpuRender.passIndex];
+  cpuRender.cols = Math.ceil(cpuRender.snapshot.width / cpuRender.step);
+  cpuRender.rows = Math.ceil(cpuRender.snapshot.height / cpuRender.step);
+  cpuRender.blockIndex = 0;
+  cpuRender.nextBatchBlock = 0;
+  cpuRender.pendingBatches = 0;
+  cpuRender.totalBlocks = cpuRender.cols * cpuRender.rows;
+}
+
+function paintCpuBlock(blockIndex) {
+  const snap = cpuRender.snapshot;
+  const step = cpuRender.step;
+  const col = blockIndex % cpuRender.cols;
+  const row = Math.floor(blockIndex / cpuRender.cols);
+  const xStart = col * step;
+  const yStart = row * step;
+  const xEnd = Math.min(xStart + step, snap.width);
+  const yEnd = Math.min(yStart + step, snap.height);
+  const sampleX = Math.min(xStart + step * 0.5, snap.width - 0.5);
+  const sampleY = Math.min(yStart + step * 0.5, snap.height - 0.5);
+  const worldX = snap.x0 + sampleX * snap.scale;
+  const worldY = snap.y1 - sampleY * snap.scale;
+  const color = cpuColor(
+    cpuEscape(snap.fractalIdx, worldX, worldY, snap.iter, snap.juliaC),
+    snap.iter,
+    snap.palette,
+    snap.cycle
+  );
+
+  for (let y = yStart; y < yEnd; y++) {
+    let p = (y * snap.width + xStart) * 4;
+    for (let x = xStart; x < xEnd; x++) {
+      cpuRender.pixels[p++] = color[0];
+      cpuRender.pixels[p++] = color[1];
+      cpuRender.pixels[p++] = color[2];
+      cpuRender.pixels[p++] = 255;
+    }
+  }
+}
+
+function paintCpuColorBatch(startBlock, colors) {
+  const snap = cpuRender.snapshot;
+  const step = cpuRender.step;
+  const count = colors.length / 4;
+
+  for (let i = 0; i < count; i++) {
+    const blockIndex = startBlock + i;
+    const col = blockIndex % cpuRender.cols;
+    const row = Math.floor(blockIndex / cpuRender.cols);
+    const xStart = col * step;
+    const yStart = row * step;
+    const xEnd = Math.min(xStart + step, snap.width);
+    const yEnd = Math.min(yStart + step, snap.height);
+    const colorOffset = i * 4;
+
+    for (let y = yStart; y < yEnd; y++) {
+      let p = (y * snap.width + xStart) * 4;
+      for (let x = xStart; x < xEnd; x++) {
+        cpuRender.pixels[p++] = colors[colorOffset];
+        cpuRender.pixels[p++] = colors[colorOffset + 1];
+        cpuRender.pixels[p++] = colors[colorOffset + 2];
+        cpuRender.pixels[p++] = 255;
+      }
+    }
+  }
+}
+
+function dispatchCpuWorkerBatches() {
+  if (!cpuRender.running || cpuRender.dirty || !state.cpuRefine) return;
+
+  for (const entry of cpuRender.workers) {
+    if (entry.busy || cpuRender.nextBatchBlock >= cpuRender.totalBlocks) continue;
+    const startBlock = cpuRender.nextBatchBlock;
+    const count = Math.min(CPU_WORKER_BATCH_BLOCKS, cpuRender.totalBlocks - startBlock);
+    cpuRender.nextBatchBlock += count;
+    cpuRender.pendingBatches++;
+    entry.busy = true;
+    entry.worker.postMessage({
+      generation: cpuRender.activeGeneration,
+      passIndex: cpuRender.passIndex,
+      snapshot: cpuRender.snapshot,
+      step: cpuRender.step,
+      cols: cpuRender.cols,
+      totalBlocks: cpuRender.totalBlocks,
+      startBlock,
+      count,
+    });
+  }
+
+  finishCpuWorkerPassIfDone();
+}
+
+function onCpuWorkerMessage(entry, data) {
+  entry.busy = false;
+  cpuRender.pendingBatches = Math.max(0, cpuRender.pendingBatches - 1);
+
+  if (data.generation !== cpuRender.activeGeneration ||
+      data.passIndex !== cpuRender.passIndex ||
+      !cpuRender.running ||
+      cpuRender.dirty ||
+      !state.cpuRefine) return;
+
+  paintCpuColorBatch(data.startBlock, data.colors);
+  const now = performance.now();
+  if (now - cpuRender.lastPaint > 32 || cpuRender.pendingBatches === 0) {
+    deepCtx.putImageData(cpuRender.imageData, 0, 0);
+    cpuRender.lastPaint = now;
+  }
+
+  dispatchCpuWorkerBatches();
+}
+
+function finishCpuWorkerPassIfDone() {
+  if (cpuRender.nextBatchBlock < cpuRender.totalBlocks || cpuRender.pendingBatches > 0) return;
+  deepCtx.putImageData(cpuRender.imageData, 0, 0);
+  cpuRender.passIndex++;
+  if (cpuRender.passIndex >= CPU_PASSES.length) {
+    cpuRender.running = false;
+    cpuRender.complete = true;
+    return;
+  }
+  setupCpuPass();
+  dispatchCpuWorkerBatches();
+}
+
+function processCpuRenderMain(generation) {
+  if (generation !== cpuRender.activeGeneration ||
+      !cpuRender.running ||
+      cpuRender.dirty ||
+      !state.cpuRefine) return;
+  const started = performance.now();
+  const totalBlocks = cpuRender.cols * cpuRender.rows;
+
+  while (performance.now() - started < CPU_FRAME_BUDGET_MS) {
+    paintCpuBlock(cpuRender.blockIndex++);
+    if (cpuRender.blockIndex >= totalBlocks) {
+      deepCtx.putImageData(cpuRender.imageData, 0, 0);
+      cpuRender.passIndex++;
+      if (cpuRender.passIndex >= CPU_PASSES.length) {
+        cpuRender.running = false;
+        cpuRender.complete = true;
+        return;
+      }
+      setupCpuPass();
+      break;
+    }
+  }
+
+  deepCtx.putImageData(cpuRender.imageData, 0, 0);
+  requestAnimationFrame(() => processCpuRenderMain(generation));
+}
+
+function maybeStartCpuRender(now) {
+  if (!state.cpuRefine || !deepCtx || cpuRender.running || !cpuRender.dirty) return;
+  if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
+  if (state.dragging || activePointers.size || !isCameraSettled()) return;
+  startCpuRender();
+}
+
 // ─── Input handlers ───────────────────────────────────────────────────────────
 
 function canvasPixelFromClient(clientX, clientY) {
@@ -776,6 +1274,14 @@ function switchFractal() {
   saveViewForCurrentFractal();
   state.fractalIdx = (state.fractalIdx + 1) % FRACTALS.length;
   restoreViewForFractal(state.fractalIdx);
+  markDeepDirty(true);
+  saveSettings();
+}
+
+function toggleRefine() {
+  state.cpuRefine = !state.cpuRefine;
+  markDeepDirty(true);
+  if (!state.cpuRefine && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
   saveSettings();
 }
 
@@ -788,6 +1294,7 @@ function share() {
 }
 
 canvas.addEventListener("pointerdown", e => {
+  markDeepDirty(true);
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
   if (activePointers.size >= 2) beginPinch();
@@ -837,23 +1344,26 @@ const keys = {};
 window.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "KeyF") switchFractal();
-  if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); saveSettings(); }
+  if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
+  if (e.code === "KeyX") toggleRefine();
   if (e.code === "KeyR") { resetView(); saveSettings(); }
   if (e.code === "KeyC") share();
 });
 window.addEventListener("keyup", e => { keys[e.code] = false; });
 
 ui.btnFractal.addEventListener("click", switchFractal);
-ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); saveSettings(); });
+ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
+ui.btnRefine.addEventListener("click", toggleRefine);
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
 ui.btnShare.addEventListener("click",   share);
 ["iterations","colorCycle","juliaAngle"].forEach(id => {
   ui[id].addEventListener("input", () => {
     if (id !== "iterations") markMinimapDirty();
+    markDeepDirty(true);
     saveSettings();
   });
 });
-window.addEventListener("resize", resize);
+window.addEventListener("resize", () => { resize(); markDeepDirty(true); });
 
 // ─── Keyboard pan/zoom ────────────────────────────────────────────────────────
 
@@ -924,6 +1434,7 @@ function render(now) {
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   drawMinimap();
+  maybeStartCpuRender(now);
   requestAnimationFrame(render);
 }
 
