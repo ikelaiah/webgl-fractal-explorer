@@ -72,8 +72,10 @@ Enabled by the **Refine** button. A pool of up to 8 Web Workers renders the deep
 
 Performance optimisations in the CPU inner loop:
 
+- **Specialized per-formula escape functions** for Mandelbrot, Julia, and Burning Ship — the three hottest formulas get their own tight inner loops, eliminating the large branch tower on each iteration and letting V8 inline aggressively
 - **Integer formula dispatch** — per-pixel `formula === "..."` string comparisons replaced with an integer `FORMULA_ID` switch
 - **Cardioid/period-2 bulb early exit** for the classic Mandelbrot set, skipping the iteration loop for points provably inside
+- **Periodicity detection** — a slow-moving reference point is compared against `z` every few iterations (with exponential back-off up to 512); interior points that enter a cycle exit immediately instead of burning the full iteration budget. Huge win on black regions at deep zoom
 - **Zero-allocation hot loop** — escape samples and colours write into reusable scratch objects (`_SAMPLE`, `_COLOR`, `_BASIN_COLOR`) instead of allocating per pixel
 - **Inlined `Math.abs` / `Math.hypot` / clamp** calls via ternary expressions
 - **Init-once worker protocol** — the per-pass snapshot is sent to each worker once, not with every batch message, cutting postMessage payload by ~1000× on a full-frame pass

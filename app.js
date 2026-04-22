@@ -139,6 +139,7 @@ const CPU_PASSES = [8, 4, 2, 1];
 const CPU_MAX_WORKERS = 8;
 const CPU_WORKER_COUNT_OVERRIDE = 8;
 const CPU_WORKER_BATCH_BLOCKS = 16384;
+const CPU_PREVIEW_ZOOM_THRESHOLD = 1e5;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
 
@@ -193,6 +194,7 @@ const cpuRender = {
   totalBlocks: 0,
   lastPaint: 0,
   useWorkers: false,
+  previewOnly: false,
 };
 
 function viewBoundsForFractal(idx = state.fractalIdx) {
@@ -982,13 +984,15 @@ function drawMinimap() {
 // ─── CPU refinement ───────────────────────────────────────────────────────────
 
 function markDeepDirty(clear = false) {
-  if (cpuRender.running) cancelCpuWorkers();
+  if (cpuRender.running && !cpuRender.previewOnly) cancelCpuWorkers();
   cpuRender.dirty = true;
   cpuRender.complete = false;
   cpuRender.dirtySince = performance.now();
-  cpuRender.generation++;
-  cpuRender.running = false;
-  if (clear && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  if (!cpuRender.previewOnly) {
+    cpuRender.generation++;
+    cpuRender.running = false;
+  }
+  if (clear && !cpuRender.previewOnly && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
 }
 
 function isCameraSettled() {
@@ -1023,6 +1027,9 @@ function cpuWorkerSource() {
     basinRootId,
     basinColor,
     mandelbrotInSet,
+    escapeMandelbrot,
+    escapeJulia,
+    escapeBurningShip,
     cpuEscape,
     cpuColor,
   ].map(fn => fn.toString()).join("\n\n");
@@ -1053,6 +1060,7 @@ const BASIN_BASES = new Uint8Array([
 const _SAMPLE = { iter: 0, zx: 0, zy: 0, root: undefined, trap: Infinity, trapKind: undefined, mag2: 0 };
 const _COLOR = [0, 0, 0];
 const _BASIN_COLOR = [0, 0, 0];
+const PERIOD_EPS = 1e-16;
 
 ${sharedFunctions}
 
@@ -1184,9 +1192,114 @@ function mandelbrotInSet(cx, cy) {
 
 const _SAMPLE = { iter: 0, zx: 0, zy: 0, root: undefined, trap: Infinity, trapKind: undefined, mag2: 0 };
 
+const PERIOD_EPS = 1e-16;
+
+function escapeMandelbrot(cx, cy, maxIter) {
+  if (mandelbrotInSet(cx, cy)) {
+    _SAMPLE.iter = maxIter; _SAMPLE.zx = 0; _SAMPLE.zy = 0;
+    _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = 0;
+    return _SAMPLE;
+  }
+  let zx = 0, zy = 0;
+  let rx = 0, ry = 0;
+  let refresh = 8, since = 0;
+  for (let n = 0; n < maxIter; n++) {
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const mag2 = x2 + y2;
+    if (mag2 > 256) {
+      _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = mag2;
+      return _SAMPLE;
+    }
+    const ny = 2 * zx * zy + cy;
+    zx = x2 - y2 + cx;
+    zy = ny;
+    const dx = zx - rx, dy = zy - ry;
+    if (dx * dx + dy * dy < PERIOD_EPS) {
+      _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+      _SAMPLE.mag2 = zx * zx + zy * zy;
+      return _SAMPLE;
+    }
+    if (++since >= refresh) { rx = zx; ry = zy; since = 0; if (refresh < 512) refresh *= 2; }
+  }
+  _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+  _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+  _SAMPLE.mag2 = zx * zx + zy * zy;
+  return _SAMPLE;
+}
+
+function escapeJulia(x, y, cx, cy, maxIter) {
+  let zx = x, zy = y;
+  let rx = x, ry = y;
+  let refresh = 8, since = 0;
+  for (let n = 0; n < maxIter; n++) {
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const mag2 = x2 + y2;
+    if (mag2 > 256) {
+      _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = mag2;
+      return _SAMPLE;
+    }
+    const ny = 2 * zx * zy + cy;
+    zx = x2 - y2 + cx;
+    zy = ny;
+    const dx = zx - rx, dy = zy - ry;
+    if (dx * dx + dy * dy < PERIOD_EPS) {
+      _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+      _SAMPLE.mag2 = zx * zx + zy * zy;
+      return _SAMPLE;
+    }
+    if (++since >= refresh) { rx = zx; ry = zy; since = 0; if (refresh < 512) refresh *= 2; }
+  }
+  _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+  _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+  _SAMPLE.mag2 = zx * zx + zy * zy;
+  return _SAMPLE;
+}
+
+function escapeBurningShip(cx, cy, maxIter) {
+  let zx = 0, zy = 0;
+  let rx = 0, ry = 0;
+  let refresh = 8, since = 0;
+  for (let n = 0; n < maxIter; n++) {
+    const ax = zx < 0 ? -zx : zx;
+    const ay = zy < 0 ? -zy : zy;
+    const x2 = ax * ax;
+    const y2 = ay * ay;
+    const mag2 = x2 + y2;
+    if (mag2 > 256) {
+      _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = mag2;
+      return _SAMPLE;
+    }
+    zx = x2 - y2 + cx;
+    zy = 2 * ax * ay + cy;
+    const dx = zx - rx, dy = zy - ry;
+    if (dx * dx + dy * dy < PERIOD_EPS) {
+      _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+      _SAMPLE.mag2 = zx * zx + zy * zy;
+      return _SAMPLE;
+    }
+    if (++since >= refresh) { rx = zx; ry = zy; since = 0; if (refresh < 512) refresh *= 2; }
+  }
+  _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+  _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+  _SAMPLE.mag2 = zx * zx + zy * zy;
+  return _SAMPLE;
+}
+
 function cpuEscape(formula, x, y, maxIter, jc) {
-  const meta = formulaMeta(formula);
   const fid = FORMULA_ID[formula] !== undefined ? FORMULA_ID[formula] : -1;
+  if (fid === 0) return escapeMandelbrot(x, y, maxIter);
+  if (fid === 1) return escapeJulia(x, y, jc[0], jc[1], maxIter);
+  if (fid === 2 && formula === "burningShip") return escapeBurningShip(x, y, maxIter);
+
+  const meta = formulaMeta(formula);
   const hasBasin = (meta.basinRoots || 0) > 0;
   const isNewton = !!meta.newton;
   let zx = 0, zy = 0, cx = x, cy = y, px = 0, trap = Infinity;
@@ -1202,11 +1315,10 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     zx = x; zy = y;
   }
 
-  if (fid === 0 && mandelbrotInSet(cx, cy)) {
-    _SAMPLE.iter = maxIter; _SAMPLE.zx = 0; _SAMPLE.zy = 0;
-    _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = 0;
-    return _SAMPLE;
-  }
+  // Periodicity check is safe only when the map is c-static, not a basin, not an orbit trap,
+  // and doesn't use history (phoenix). Newton/basin paths have their own convergence check.
+  const useCycle = !isNewton && !hasBasin && !trapKind && meta.initial !== "phoenix" && fid !== 15;
+  let refX = zx, refY = zy, refresh = 8, since = 0;
 
   for (let n = 0; n < maxIter; n++) {
     let nx, ny;
@@ -1516,6 +1628,16 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     }
 
     zx = nx; zy = ny;
+    if (useCycle) {
+      const dx = zx - refX, dy = zy - refY;
+      if (dx * dx + dy * dy < PERIOD_EPS) {
+        _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+        _SAMPLE.root = undefined; _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind;
+        _SAMPLE.mag2 = zx * zx + zy * zy;
+        return _SAMPLE;
+      }
+      if (++since >= refresh) { refX = zx; refY = zy; since = 0; if (refresh < 512) refresh *= 2; }
+    }
     const mag2 = zx * zx + zy * zy;
     if (!Number.isFinite(mag2)) {
       _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
@@ -1609,10 +1731,35 @@ function makeCpuSnapshot() {
 
 function startCpuRender() {
   if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
+  if (cpuRender.running) cancelCpuWorkers();
+  deepCanvas.style.transform = "";
   const generation = ++cpuRender.generation;
   cpuRender.running = true;
   cpuRender.dirty = false;
   cpuRender.complete = false;
+  cpuRender.previewOnly = false;
+  cpuRender.activeGeneration = generation;
+  cpuRender.imageData = deepCtx.createImageData(deepCanvas.width, deepCanvas.height);
+  cpuRender.pixels = cpuRender.imageData.data;
+  cpuRender.passIndex = 0;
+  cpuRender.blockIndex = 0;
+  cpuRender.snapshot = makeCpuSnapshot();
+  cpuRender.lastPaint = 0;
+  cpuRender.useWorkers = ensureCpuWorkers();
+  setupCpuPass();
+  if (cpuRender.useWorkers) { initCpuWorkers(); dispatchCpuWorkerBatches(); }
+  else requestAnimationFrame(() => processCpuRenderMain(generation));
+}
+
+function startCpuPreview() {
+  if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
+  if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
+  if (cpuRender.running) cancelCpuWorkers();
+  const generation = ++cpuRender.generation;
+  cpuRender.running = true;
+  cpuRender.dirty = false;
+  cpuRender.complete = false;
+  cpuRender.previewOnly = true;
   cpuRender.activeGeneration = generation;
   cpuRender.imageData = deepCtx.createImageData(deepCanvas.width, deepCanvas.height);
   cpuRender.pixels = cpuRender.imageData.data;
@@ -1755,9 +1902,9 @@ function finishCpuWorkerPassIfDone() {
   if (cpuRender.nextBatchBlock < cpuRender.totalBlocks || cpuRender.pendingBatches > 0) return;
   deepCtx.putImageData(cpuRender.imageData, 0, 0);
   cpuRender.passIndex++;
-  if (cpuRender.passIndex >= CPU_PASSES.length) {
+  if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
     cpuRender.running = false;
-    cpuRender.complete = true;
+    cpuRender.complete = !cpuRender.previewOnly;
     return;
   }
   setupCpuPass();
@@ -1778,9 +1925,9 @@ function processCpuRenderMain(generation) {
     if (cpuRender.blockIndex >= totalBlocks) {
       deepCtx.putImageData(cpuRender.imageData, 0, 0);
       cpuRender.passIndex++;
-      if (cpuRender.passIndex >= CPU_PASSES.length) {
+      if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
         cpuRender.running = false;
-        cpuRender.complete = true;
+        cpuRender.complete = !cpuRender.previewOnly;
         return;
       }
       setupCpuPass();
@@ -1793,7 +1940,8 @@ function processCpuRenderMain(generation) {
 }
 
 function maybeStartCpuRender(now) {
-  if (!state.cpuRefine || !deepCtx || cpuRender.running || !cpuRender.dirty) return;
+  if (!state.cpuRefine || !deepCtx || !cpuRender.dirty) return;
+  if (cpuRender.running && !cpuRender.previewOnly) return;
   if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
   if (state.dragging || activePointers.size || !isCameraSettled()) return;
   startCpuRender();
@@ -1851,6 +1999,7 @@ function beginPanFromPointer(p) {
   state.dragStartY = p.y;
   state.dragStartCX = state.targetCenterX;
   state.dragStartCY = state.targetCenterY;
+  startCpuPreview();
 }
 
 function beginPinch() {
@@ -1981,14 +2130,19 @@ canvas.addEventListener("pointermove", e => {
     return;
   }
   if (!state.dragging) return;
+  const dx = e.clientX - state.dragStartX;
+  const dy = e.clientY - state.dragStartY;
   const rect = canvas.getBoundingClientRect();
   const sx = canvas.width / Math.max(rect.width, 1);
   const sy = canvas.height / Math.max(rect.height, 1);
   setCameraTarget(
-    state.dragStartCX - (e.clientX - state.dragStartX) * sx * state.targetPixelScale,
-    state.dragStartCY + (e.clientY - state.dragStartY) * sy * state.targetPixelScale,
+    state.dragStartCX - dx * sx * state.targetPixelScale,
+    state.dragStartCY + dy * sy * state.targetPixelScale,
     state.targetPixelScale
   );
+  if (cpuRender.previewOnly) {
+    deepCanvas.style.transform = `translate(${dx}px,${dy}px)`;
+  }
 });
 
 function endPointer(e) {

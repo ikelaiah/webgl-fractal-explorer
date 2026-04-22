@@ -6,6 +6,8 @@ All notable changes to WebGL Fractal Explorer are documented here.
 
 ### Performance
 
+- Specialized `escapeMandelbrot`, `escapeJulia`, `escapeBurningShip` functions for the three hottest formulas — tight dedicated inner loops with no per-iteration branch tower
+- Periodicity detection (slow reference point with exponential back-off to 512) short-circuits interior points in Mandelbrot, Julia, Burning Ship, and the generic non-basin/non-trap paths — large speed-up on dark regions at deep zoom
 - Integer formula dispatch replaces per-iteration string comparisons in `cpuEscape`
 - Mandelbrot cardioid/period-2 bulb early-exit skips the iteration loop for interior points
 - Zero-allocation hot loop: reusable `_SAMPLE`, `_COLOR`, `_BASIN_COLOR` scratch objects eliminate per-pixel garbage
