@@ -138,7 +138,7 @@ const CPU_REFINE_DELAY_MS = 180;
 const CPU_PASSES = [8, 4, 2, 1];
 const CPU_MAX_WORKERS = 8;
 const CPU_WORKER_COUNT_OVERRIDE = 8;
-const CPU_WORKER_BATCH_BLOCKS = 2048;
+const CPU_WORKER_BATCH_BLOCKS = 131072;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
 
@@ -1516,10 +1516,22 @@ function paintCpuColorBatch(startBlock, colors) {
 function dispatchCpuWorkerBatches() {
   if (!cpuRender.running || cpuRender.dirty || !state.cpuRefine) return;
 
-  for (const entry of cpuRender.workers) {
-    if (entry.busy || cpuRender.nextBatchBlock >= cpuRender.totalBlocks) continue;
+  const freeWorkers = cpuRender.workers.filter(w => !w.busy);
+  const remaining = cpuRender.totalBlocks - cpuRender.nextBatchBlock;
+  if (freeWorkers.length === 0 || remaining <= 0) {
+    finishCpuWorkerPassIfDone();
+    return;
+  }
+
+  const batchSize = Math.max(
+    CPU_WORKER_BATCH_BLOCKS,
+    Math.ceil(remaining / freeWorkers.length)
+  );
+
+  for (const entry of freeWorkers) {
+    if (cpuRender.nextBatchBlock >= cpuRender.totalBlocks) break;
     const startBlock = cpuRender.nextBatchBlock;
-    const count = Math.min(CPU_WORKER_BATCH_BLOCKS, cpuRender.totalBlocks - startBlock);
+    const count = Math.min(batchSize, cpuRender.totalBlocks - startBlock);
     cpuRender.nextBatchBlock += count;
     cpuRender.pendingBatches++;
     entry.busy = true;
@@ -1550,7 +1562,7 @@ function onCpuWorkerMessage(entry, data) {
 
   paintCpuColorBatch(data.startBlock, data.colors);
   const now = performance.now();
-  if (now - cpuRender.lastPaint > 32 || cpuRender.pendingBatches === 0) {
+  if (now - cpuRender.lastPaint > 80 || cpuRender.pendingBatches === 0) {
     deepCtx.putImageData(cpuRender.imageData, 0, 0);
     cpuRender.lastPaint = now;
   }
