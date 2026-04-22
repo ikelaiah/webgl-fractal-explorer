@@ -624,7 +624,7 @@ const FRACTALS = [
   { name: "Cubic Burning Ship",  category: "Folded",        src: burningShipCubicFrag, center: [0.0, -0.2], scale: 3.2, julia: false, formula: "burningCubic" },
   { name: "Octic Multibrot",     category: "Power",         src: octicMultibrotFrag,   center: [0.0,  0.0], scale: 2.4, julia: false, formula: "octic" },
   { name: "Sine Mandelbrot",     category: "Transcendental", src: sineMandelbrotFrag,  center: [0.0,  0.0], scale: 6.0, julia: false, formula: "sine" },
-  { name: "Mandelbox",           category: "Box Fold",      src: mandelboxFrag,        center: [0.0,  0.0], scale: 4.0, julia: false, formula: "mandelbox" },
+  { name: "Mandelbox",           category: "Box Fold",      src: mandelboxFrag,        center: [0.0,  0.0], scale: 4.0, bounds: { width: 44.0, height: 22.0 }, julia: false, formula: "mandelbox" },
 ];
 
 // ─── WebGL helpers ────────────────────────────────────────────────────────────
@@ -728,6 +728,7 @@ const MAX_ITER = 1024;
 const DEFAULT_ITER = 256;
 const CAMERA_EASE = 12;
 const CAMERA_SETTLE_EPS = 32 * Number.EPSILON;
+const RESET_VIEW_PADDING = 1.08;
 const MINIMAP_ITER = 56;
 const CPU_DPR = 1;
 const CPU_FRAME_BUDGET_MS = 10;
@@ -789,13 +790,29 @@ const cpuRender = {
   useWorkers: false,
 };
 
+function viewBoundsForFractal(idx = state.fractalIdx) {
+  const f = FRACTALS[idx] || FRACTALS[0];
+  const bounds = f.bounds || {};
+  const center = Array.isArray(bounds.center) ? bounds.center : f.center;
+  const width = Number.isFinite(bounds.width) && bounds.width > 0 ? bounds.width : f.scale;
+  const height = Number.isFinite(bounds.height) && bounds.height > 0 ? bounds.height : f.scale;
+  return { cx: center[0], cy: center[1], width, height };
+}
+
 function resetView(idx) {
-  const f = FRACTALS[idx ?? state.fractalIdx];
-  setCameraTarget(f.center[0], f.center[1], f.scale / Math.max(canvas.width || 800, 1), true);
+  const bounds = viewBoundsForFractal(idx ?? state.fractalIdx);
+  const w = Math.max(canvas.width || 800, 1);
+  const h = Math.max(canvas.height || 600, 1);
+  const pixelScale = Math.max(bounds.width / w, bounds.height / h) * RESET_VIEW_PADDING;
+  setCameraTarget(bounds.cx, bounds.cy, pixelScale, true);
 }
 
 function setCameraTarget(cx, cy, pixelScale, immediate = false) {
-  const fallback = FRACTALS[state.fractalIdx].scale / Math.max(canvas.width || 800, 1);
+  const fallbackBounds = viewBoundsForFractal(state.fractalIdx);
+  const fallback = Math.max(
+    fallbackBounds.width / Math.max(canvas.width || 800, 1),
+    fallbackBounds.height / Math.max(canvas.height || 600, 1)
+  ) * RESET_VIEW_PADDING;
   const nextX = Number.isFinite(cx) ? cx : FRACTALS[state.fractalIdx].center[0];
   const nextY = Number.isFinite(cy) ? cy : FRACTALS[state.fractalIdx].center[1];
   const nextScale = Number.isFinite(pixelScale) && pixelScale > 0 ? pixelScale : fallback;
@@ -1201,15 +1218,14 @@ function renderMinimapBackground() {
   const w = minimapBase.width;
   const h = minimapBase.height;
   const image = minimapBaseCtx.createImageData(w, h);
-  const f = FRACTALS[state.fractalIdx];
-  const scale = f.scale;
-  const left = f.center[0] - scale * 0.5;
-  const top = f.center[1] + scale * 0.5;
+  const bounds = viewBoundsForFractal(state.fractalIdx);
+  const left = bounds.cx - bounds.width * 0.5;
+  const top = bounds.cy + bounds.height * 0.5;
 
   for (let py = 0; py < h; py++) {
-    const y = top - (py / Math.max(h - 1, 1)) * scale;
+    const y = top - (py / Math.max(h - 1, 1)) * bounds.height;
     for (let px = 0; px < w; px++) {
-      const x = left + (px / Math.max(w - 1, 1)) * scale;
+      const x = left + (px / Math.max(w - 1, 1)) * bounds.width;
       const iter = previewEscape(state.fractalIdx, x, y);
       const offset = (py * w + px) * 4;
       if (iter >= MINIMAP_ITER) {
@@ -1232,11 +1248,10 @@ function renderMinimapBackground() {
 }
 
 function mapWorldToMinimap(x, y) {
-  const f = FRACTALS[state.fractalIdx];
-  const scale = f.scale;
+  const bounds = viewBoundsForFractal(state.fractalIdx);
   return {
-    x: ((x - (f.center[0] - scale * 0.5)) / scale) * minimap.width,
-    y: (((f.center[1] + scale * 0.5) - y) / scale) * minimap.height,
+    x: ((x - (bounds.cx - bounds.width * 0.5)) / bounds.width) * minimap.width,
+    y: (((bounds.cy + bounds.height * 0.5) - y) / bounds.height) * minimap.height,
   };
 }
 
