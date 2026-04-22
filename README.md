@@ -70,6 +70,14 @@ sm = iter - log2(max(1, log2(|z|²))) + 4
 
 Enabled by the **Refine** button. A pool of up to 8 Web Workers renders the deep canvas in progressive passes (8 → 4 → 2 → 1 pixel blocks). The CPU path mirrors every GPU formula exactly, including basin root identification and orbit trap distances.
 
+Performance optimisations in the CPU inner loop:
+
+- **Integer formula dispatch** — per-pixel `formula === "..."` string comparisons replaced with an integer `FORMULA_ID` switch
+- **Cardioid/period-2 bulb early exit** for the classic Mandelbrot set, skipping the iteration loop for points provably inside
+- **Zero-allocation hot loop** — escape samples and colours write into reusable scratch objects (`_SAMPLE`, `_COLOR`, `_BASIN_COLOR`) instead of allocating per pixel
+- **Inlined `Math.abs` / `Math.hypot` / clamp** calls via ternary expressions
+- **Init-once worker protocol** — the per-pass snapshot is sent to each worker once, not with every batch message, cutting postMessage payload by ~1000× on a full-frame pass
+
 ### Precision
 
 - GPU: triple-single arithmetic (~72-bit mantissa, pixelation deferred to ~10¹⁴× zoom)

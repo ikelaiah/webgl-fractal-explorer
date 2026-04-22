@@ -585,17 +585,25 @@ function basinRootId(formula, zx, zy) {
   return formulaMeta(formula).basinRoots === 4 ? quarticRootId(zx, zy) : cubicRootId(zx, zy);
 }
 
+const BASIN_BASES = new Uint8Array([
+  245, 87, 56,
+  46, 184, 255,
+  199, 235, 71,
+  194, 110, 255,
+]);
+const _BASIN_COLOR = [0, 0, 0];
+
 function basinColor(root, iter, maxIter, cycle = 0) {
-  const bases = [
-    [245, 87, 56],
-    [46, 184, 255],
-    [199, 235, 71],
-    [194, 110, 255],
-  ];
-  const base = bases[root] || bases[0];
-  const shade = 0.28 + 0.72 * Math.pow(1 - Math.min(1, iter / Math.max(maxIter, 1)), 0.7);
+  const idx = (root >= 0 && root < 4) ? root * 3 : 0;
+  const m = maxIter > 0 ? maxIter : 1;
+  const k = iter / m;
+  const shade = 0.28 + 0.72 * Math.pow(1 - (k > 1 ? 1 : k), 0.7);
   const ring = 0.86 + 0.14 * Math.cos(Math.PI * 2 * (iter * 0.08 + cycle));
-  return base.map(channel => Math.round(channel * shade * ring));
+  const scale = shade * ring;
+  _BASIN_COLOR[0] = Math.round(BASIN_BASES[idx] * scale);
+  _BASIN_COLOR[1] = Math.round(BASIN_BASES[idx + 1] * scale);
+  _BASIN_COLOR[2] = Math.round(BASIN_BASES[idx + 2] * scale);
+  return _BASIN_COLOR;
 }
 
 function previewEscape(fractalIdx, x, y) {
@@ -1014,6 +1022,7 @@ function cpuWorkerSource() {
     quarticRootId,
     basinRootId,
     basinColor,
+    mandelbrotInSet,
     cpuEscape,
     cpuColor,
   ].map(fn => fn.toString()).join("\n\n");
@@ -1022,6 +1031,28 @@ function cpuWorkerSource() {
 const COLOR_MODE_ESCAPE = ${COLOR_MODE_ESCAPE};
 const COLOR_MODE_BASIN = ${COLOR_MODE_BASIN};
 const FORMULA_META = ${JSON.stringify(FORMULA_META)};
+const FORMULA_ID = ${JSON.stringify(FORMULA_ID)};
+const TWO_PI = Math.PI * 2;
+const PALETTE_SHIFTS = new Float64Array([
+  0.00, 0.18, 0.36,
+  0.46, 0.08, 0.02,
+  0.04, 0.30, 0.22,
+  0.28, 0.02, 0.38,
+  0.38, 0.28, 0.04,
+]);
+const TRAP_STYLE_FLOWER = { tScale: 0.17, s0: 0.16, s1: 0.36, s2: 0.66, baseMix: 0.32, glowEdge: 0.18 };
+const TRAP_STYLE_LOTUS  = { tScale: 0.16, s0: 0.08, s1: 0.34, s2: 0.70, baseMix: 0.30, glowEdge: 0.20 };
+const TRAP_STYLE_ROSE   = { tScale: 0.19, s0: 0.22, s1: 0.48, s2: 0.76, baseMix: 0.34, glowEdge: 0.17 };
+const TRAP_STYLE_DEFAULT = { tScale: 0.18, s0: 0.02, s1: 0.32, s2: 0.58, baseMix: 0.35, glowEdge: 0.16 };
+const BASIN_BASES = new Uint8Array([
+  245, 87, 56,
+  46, 184, 255,
+  199, 235, 71,
+  194, 110, 255,
+]);
+const _SAMPLE = { iter: 0, zx: 0, zy: 0, root: undefined, trap: Infinity, trapKind: undefined, mag2: 0 };
+const _COLOR = [0, 0, 0];
+const _BASIN_COLOR = [0, 0, 0];
 
 ${sharedFunctions}
 
@@ -1103,8 +1134,61 @@ function ensureCpuWorkers() {
   }
 }
 
+const FORMULA_ID = {
+  mandelbrot: 0, julia: 1,
+  burningShip: 2, burningJulia: 2,
+  tricorn: 3, tricornJulia: 3, mandelbarJulia: 3,
+  cubic: 4, cubicJulia: 4,
+  cubicMandelbar: 5,
+  quartic: 6, quarticJulia: 6,
+  celtic: 7, celticJulia: 7,
+  buffalo: 8, buffaloJulia: 8,
+  phoenix: 9,
+  perpendicularMandelbrot: 10, perpendicularJulia: 10,
+  celticHeart: 11,
+  perpendicularBuffalo: 12,
+  quintic: 13,
+  lambda: 14,
+  spider: 15,
+  burningCubic: 16,
+  burningQuartic: 17,
+  octic: 18,
+  glynnJulia: 19,
+  cosine: 20,
+  sine: 21, sineJulia: 21,
+  magnet: 22,
+  feather: 23,
+  rationalJuliaLace: 24,
+  novaJuliaBloom: 25,
+  rationalMandelbrotLace: 26,
+  orbitTrapMandelbrot: 27,
+  orbitTrapFlower: 28,
+  orbitTrapLotus: 29,
+  orbitTrapRoseJulia: 30,
+  mandelbox: 31,
+  newtonCubic: 40,
+  newtonQuartic: 41,
+  halleyCubic: 42,
+  novaBasins: 43,
+  newtonRelaxSpiral: 44,
+  newtonRelaxStorm: 45,
+};
+
+function mandelbrotInSet(cx, cy) {
+  const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+  if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) return true;
+  const dx = cx + 1;
+  if (dx * dx + cy * cy <= 0.0625) return true;
+  return false;
+}
+
+const _SAMPLE = { iter: 0, zx: 0, zy: 0, root: undefined, trap: Infinity, trapKind: undefined, mag2: 0 };
+
 function cpuEscape(formula, x, y, maxIter, jc) {
   const meta = formulaMeta(formula);
+  const fid = FORMULA_ID[formula] !== undefined ? FORMULA_ID[formula] : -1;
+  const hasBasin = (meta.basinRoots || 0) > 0;
+  const isNewton = !!meta.newton;
   let zx = 0, zy = 0, cx = x, cy = y, px = 0, trap = Infinity;
   const trapKind = meta.orbitTrap ? formula : undefined;
 
@@ -1118,128 +1202,154 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     zx = x; zy = y;
   }
 
+  if (fid === 0 && mandelbrotInSet(cx, cy)) {
+    _SAMPLE.iter = maxIter; _SAMPLE.zx = 0; _SAMPLE.zy = 0;
+    _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined; _SAMPLE.mag2 = 0;
+    return _SAMPLE;
+  }
+
   for (let n = 0; n < maxIter; n++) {
     let nx, ny;
     const x2 = zx * zx;
     const y2 = zy * zy;
     const xy = zx * zy;
 
-    if (formula === "burningShip" || formula === "burningJulia") {
-      const ax = Math.abs(zx), ay = Math.abs(zy);
+    if (fid === 2) {
+      const ax = zx < 0 ? -zx : zx;
+      const ay = zy < 0 ? -zy : zy;
       nx = ax * ax - ay * ay + cx;
       ny = 2 * ax * ay + cy;
-    } else if (formula === "tricorn" || formula === "tricornJulia" || formula === "mandelbarJulia") {
+    } else if (fid === 3) {
       nx = x2 - y2 + cx;
       ny = -2 * xy + cy;
-    } else if (formula === "cubic" || formula === "cubicJulia") {
+    } else if (fid === 4) {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = zy * (3 * x2 - y2) + cy;
-    } else if (formula === "cubicMandelbar") {
+    } else if (fid === 5) {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = -zy * (3 * x2 - y2) + cy;
-    } else if (formula === "quartic" || formula === "quarticJulia") {
+    } else if (fid === 6) {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
       ny = 2 * qx * qy + cy;
-    } else if (formula === "celtic" || formula === "celticJulia") {
-      nx = Math.abs(x2 - y2) + cx;
+    } else if (fid === 7) {
+      nx = (x2 - y2 < 0 ? -(x2 - y2) : (x2 - y2)) + cx;
       ny = 2 * xy + cy;
-    } else if (formula === "buffalo" || formula === "buffaloJulia") {
-      nx = Math.abs(x2 - y2) + cx;
-      ny = -Math.abs(2 * xy) + cy;
-    } else if (formula === "phoenix") {
+    } else if (fid === 8) {
+      const d = x2 - y2;
+      nx = (d < 0 ? -d : d) + cx;
+      const t8 = 2 * xy;
+      ny = -(t8 < 0 ? -t8 : t8) + cy;
+    } else if (fid === 9) {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
       px = zx;
-    } else if (formula === "perpendicularMandelbrot" || formula === "perpendicularJulia") {
+    } else if (fid === 10) {
       nx = x2 - y2 + cx;
-      ny = -2 * Math.abs(zx) * zy + cy;
-    } else if (formula === "celticHeart") {
-      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * (zx < 0 ? -zx : zx) * zy + cy;
+    } else if (fid === 11) {
+      const d = x2 - y2;
+      nx = (d < 0 ? -d : d) + cx;
       ny = -2 * xy + cy;
-    } else if (formula === "perpendicularBuffalo") {
-      nx = Math.abs(x2 - y2) + cx;
-      ny = -2 * Math.abs(xy) + cy;
-    } else if (formula === "quintic") {
+    } else if (fid === 12) {
+      const d = x2 - y2;
+      nx = (d < 0 ? -d : d) + cx;
+      ny = -2 * (xy < 0 ? -xy : xy) + cy;
+    } else if (fid === 13) {
       const x4 = x2 * x2;
       const y4 = y2 * y2;
       nx = zx * (x4 - 10 * x2 * y2 + 5 * y4) + cx;
       ny = zy * (5 * x4 - 10 * x2 * y2 + y4) + cy;
-    } else if (formula === "lambda") {
+    } else if (fid === 14) {
       const pr = zx * (1 - zx) + y2;
       const pi = zy * (1 - 2 * zx);
       nx = cx * pr - cy * pi;
       ny = cx * pi + cy * pr;
-    } else if (formula === "spider") {
+    } else if (fid === 15) {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
       cx = cx * 0.5 + nx;
       cy = cy * 0.5 + ny;
-    } else if (formula === "burningCubic") {
-      const ax = Math.abs(zx), ay = Math.abs(zy);
+    } else if (fid === 16) {
+      const ax = zx < 0 ? -zx : zx;
+      const ay = zy < 0 ? -zy : zy;
       const ax2 = ax * ax;
       const ay2 = ay * ay;
       nx = ax * (ax2 - 3 * ay2) + cx;
       ny = ay * (3 * ax2 - ay2) + cy;
-    } else if (formula === "burningQuartic") {
-      const ax = Math.abs(zx), ay = Math.abs(zy);
+    } else if (fid === 17) {
+      const ax = zx < 0 ? -zx : zx;
+      const ay = zy < 0 ? -zy : zy;
       const qx = ax * ax - ay * ay;
       const qy = 2 * ax * ay;
       nx = qx * qx - qy * qy + cx;
       ny = 2 * qx * qy + cy;
-    } else if (formula === "octic") {
+    } else if (fid === 18) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const z4x = z2x * z2x - z2y * z2y;
       const z4y = 2 * z2x * z2y;
       nx = z4x * z4x - z4y * z4y + cx;
       ny = 2 * z4x * z4y + cy;
-    } else if (formula === "glynnJulia") {
-      const r = Math.pow(Math.hypot(zx, zy), 1.5);
+    } else if (fid === 19) {
+      const r = Math.pow(Math.sqrt(x2 + y2), 1.5);
       const a = Math.atan2(zy, zx) * 1.5;
       nx = Math.cos(a) * r + cx;
       ny = Math.sin(a) * r + cy;
-    } else if (formula === "cosine") {
-      const yy = Math.max(-8, Math.min(8, zy));
-      nx = Math.cos(zx) * Math.cosh(yy) + cx;
-      ny = -Math.sin(zx) * Math.sinh(yy) + cy;
-    } else if (formula === "sine" || formula === "sineJulia") {
-      const yy = Math.max(-8, Math.min(8, zy));
-      nx = Math.sin(zx) * Math.cosh(yy) + cx;
-      ny = Math.cos(zx) * Math.sinh(yy) + cy;
-    } else if (formula === "magnet") {
+    } else if (fid === 20) {
+      const yy = zy < -8 ? -8 : (zy > 8 ? 8 : zy);
+      const ey = Math.exp(yy);
+      const eny = Math.exp(-yy);
+      const ch = 0.5 * (ey + eny);
+      const sh = 0.5 * (ey - eny);
+      nx = Math.cos(zx) * ch + cx;
+      ny = -Math.sin(zx) * sh + cy;
+    } else if (fid === 21) {
+      const yy = zy < -8 ? -8 : (zy > 8 ? 8 : zy);
+      const ey = Math.exp(yy);
+      const eny = Math.exp(-yy);
+      const ch = 0.5 * (ey + eny);
+      const sh = 0.5 * (ey - eny);
+      nx = Math.sin(zx) * ch + cx;
+      ny = Math.cos(zx) * sh + cy;
+    } else if (fid === 22) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const nr = z2x + cx - 1;
       const ni = z2y + cy;
       const dr = 2 * zx + cx - 2;
       const di = 2 * zy + cy;
-      const den = Math.max(dr * dr + di * di, 1e-8);
+      const den = dr * dr + di * di > 1e-8 ? dr * dr + di * di : 1e-8;
       const qx = (nr * dr + ni * di) / den;
       const qy = (ni * dr - nr * di) / den;
       nx = qx * qx - qy * qy;
       ny = 2 * qx * qy;
-      if ((nx - 1) * (nx - 1) + ny * ny < 1e-8) return { iter: n, zx: nx, zy: ny, mag2: nx * nx + ny * ny };
-    } else if (formula === "feather") {
+      if ((nx - 1) * (nx - 1) + ny * ny < 1e-8) {
+        _SAMPLE.iter = n; _SAMPLE.zx = nx; _SAMPLE.zy = ny;
+        _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+        _SAMPLE.mag2 = nx * nx + ny * ny;
+        return _SAMPLE;
+      }
+    } else if (fid === 23) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const z3x = z2x * zx - z2y * zy;
       const z3y = z2x * zy + z2y * zx;
       const dr = 1 + z2x;
       const di = z2y;
-      const den = Math.max(dr * dr + di * di, 1e-8);
+      const den = dr * dr + di * di > 1e-8 ? dr * dr + di * di : 1e-8;
       nx = (z3x * dr + z3y * di) / den + cx;
       ny = (z3y * dr - z3x * di) / den + cy;
-    } else if (formula === "rationalJuliaLace") {
+    } else if (fid === 24) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const dr = z2x + 0.22;
       const di = z2y;
-      const den = Math.max(dr * dr + di * di, 1e-8);
+      const den = dr * dr + di * di > 1e-8 ? dr * dr + di * di : 1e-8;
       nx = z2x + (cx * dr + cy * di) / den;
       ny = z2y + (cy * dr - cx * di) / den;
-    } else if (formula === "novaJuliaBloom") {
+    } else if (fid === 25) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const z3x = z2x * zx - z2y * zy;
@@ -1248,75 +1358,100 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       const ni = z3y;
       const dr = 3 * z2x;
       const di = 3 * z2y;
-      const den = Math.max(dr * dr + di * di, 1e-8);
+      const den = dr * dr + di * di > 1e-8 ? dr * dr + di * di : 1e-8;
       const qx = (nr * dr + ni * di) / den;
       const qy = (ni * dr - nr * di) / den;
-      const rx = 0.78;
-      const ry = 0.28;
-      nx = zx - (rx * qx - ry * qy) + cx;
-      ny = zy - (rx * qy + ry * qx) + cy;
+      nx = zx - (0.78 * qx - 0.28 * qy) + cx;
+      ny = zy - (0.78 * qy + 0.28 * qx) + cy;
       if (qx * qx + qy * qy < 1e-12) {
-        return { iter: n, zx: nx, zy: ny, mag2: nx * nx + ny * ny };
+        _SAMPLE.iter = n; _SAMPLE.zx = nx; _SAMPLE.zy = ny;
+        _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+        _SAMPLE.mag2 = nx * nx + ny * ny;
+        return _SAMPLE;
       }
-    } else if (formula === "rationalMandelbrotLace") {
+    } else if (fid === 26) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const dr = z2x + 0.18;
       const di = z2y + 0.06;
-      const den = Math.max(dr * dr + di * di, 1e-8);
+      const den = dr * dr + di * di > 1e-8 ? dr * dr + di * di : 1e-8;
       nx = z2x + (0.22 * dr - 0.11 * di) / den + cx;
       ny = z2y + (-0.11 * dr - 0.22 * di) / den + cy;
-    } else if (
-      formula === "orbitTrapMandelbrot" ||
-      formula === "orbitTrapFlower" ||
-      formula === "orbitTrapLotus" ||
-      formula === "orbitTrapRoseJulia"
-    ) {
+    } else if (fid >= 27 && fid <= 30) {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
-      if (formula === "orbitTrapFlower") {
+      if (fid === 28) {
         const a = Math.atan2(ny, nx);
-        const petals = Math.abs(Math.hypot(nx, ny) - (0.35 + 0.12 * Math.cos(6 * a)));
-        const ring = Math.abs(Math.hypot(nx + 0.18, ny - 0.08) - 0.28);
-        const axis = Math.min(Math.abs(nx + 0.18), Math.abs(ny - 0.08));
-        trap = Math.min(trap, petals, ring, axis);
-      } else if (formula === "orbitTrapLotus") {
+        const r = Math.sqrt(nx * nx + ny * ny);
+        const pv = r - (0.35 + 0.12 * Math.cos(6 * a));
+        const petals = pv < 0 ? -pv : pv;
+        const rx = nx + 0.18, ry = ny - 0.08;
+        const rv = Math.sqrt(rx * rx + ry * ry) - 0.28;
+        const ring = rv < 0 ? -rv : rv;
+        const ax1 = rx < 0 ? -rx : rx;
+        const ay1 = ry < 0 ? -ry : ry;
+        const axis = ax1 < ay1 ? ax1 : ay1;
+        const m = petals < ring ? (petals < axis ? petals : axis) : (ring < axis ? ring : axis);
+        if (m < trap) trap = m;
+      } else if (fid === 29) {
         const a = Math.atan2(ny, nx);
-        const r = Math.hypot(nx, ny);
-        const outer = Math.abs(r - (0.42 + 0.11 * Math.cos(8 * a)));
-        const inner = Math.abs(r - (0.18 + 0.07 * Math.cos(5 * a + 0.8)));
-        const stem = Math.min(Math.abs(nx * 0.65 + ny * 0.35), Math.abs(nx * 0.65 - ny * 0.35));
-        trap = Math.min(trap, outer, inner, stem);
-      } else if (formula === "orbitTrapRoseJulia") {
+        const r = Math.sqrt(nx * nx + ny * ny);
+        const ov = r - (0.42 + 0.11 * Math.cos(8 * a));
+        const outer = ov < 0 ? -ov : ov;
+        const iv = r - (0.18 + 0.07 * Math.cos(5 * a + 0.8));
+        const inner = iv < 0 ? -iv : iv;
+        const s1 = nx * 0.65 + ny * 0.35;
+        const s2 = nx * 0.65 - ny * 0.35;
+        const s1a = s1 < 0 ? -s1 : s1;
+        const s2a = s2 < 0 ? -s2 : s2;
+        const stem = s1a < s2a ? s1a : s2a;
+        const m = outer < inner ? (outer < stem ? outer : stem) : (inner < stem ? inner : stem);
+        if (m < trap) trap = m;
+      } else if (fid === 30) {
         const a = Math.atan2(ny, nx);
-        const r = Math.hypot(nx, ny);
-        const rose = Math.abs(r - (0.34 + 0.14 * Math.cos(7 * a)));
-        const ring = Math.abs(Math.hypot(nx - 0.16, ny + 0.10) - 0.24);
-        const vein = Math.min(Math.abs(nx + 0.22 * Math.sin(3 * a)), Math.abs(ny - 0.18 * Math.cos(4 * a)));
-        trap = Math.min(trap, rose, ring, vein);
+        const r = Math.sqrt(nx * nx + ny * ny);
+        const rv = r - (0.34 + 0.14 * Math.cos(7 * a));
+        const rose = rv < 0 ? -rv : rv;
+        const rx = nx - 0.16, ry = ny + 0.10;
+        const riv = Math.sqrt(rx * rx + ry * ry) - 0.24;
+        const ring = riv < 0 ? -riv : riv;
+        const v1 = nx + 0.22 * Math.sin(3 * a);
+        const v2 = ny - 0.18 * Math.cos(4 * a);
+        const v1a = v1 < 0 ? -v1 : v1;
+        const v2a = v2 < 0 ? -v2 : v2;
+        const vein = v1a < v2a ? v1a : v2a;
+        const m = rose < ring ? (rose < vein ? rose : vein) : (ring < vein ? ring : vein);
+        if (m < trap) trap = m;
       } else {
-        const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
-        const cross = Math.min(Math.abs(nx), Math.abs(ny));
-        const diagonal = Math.abs(nx + ny) * 0.70710678118;
-        trap = Math.min(trap, circle, cross, diagonal);
+        const cxv = nx - 0.25;
+        const cv = Math.sqrt(cxv * cxv + ny * ny) - 0.45;
+        const circle = cv < 0 ? -cv : cv;
+        const ax1 = nx < 0 ? -nx : nx;
+        const ay1 = ny < 0 ? -ny : ny;
+        const cross = ax1 < ay1 ? ax1 : ay1;
+        const dv = nx + ny;
+        const diagonal = (dv < 0 ? -dv : dv) * 0.70710678118;
+        const m = circle < cross ? (circle < diagonal ? circle : diagonal) : (cross < diagonal ? cross : diagonal);
+        if (m < trap) trap = m;
       }
-    } else if (meta.newton) {
+    } else if (isNewton) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
       const z3x = z2x * zx - z2y * zy;
       const z3y = z2x * zy + z2y * zx;
       let qx, qy;
-      if (formula === "newtonQuartic") {
+      if (fid === 41) {
         const z4x = z2x * z2x - z2y * z2y;
         const z4y = 2 * z2x * z2y;
         const nr = z4x - 1;
         const ni = z4y;
         const dr = 4 * z3x;
         const di = 4 * z3y;
-        const den = Math.max(dr * dr + di * di, 1e-8);
+        const d2 = dr * dr + di * di;
+        const den = d2 > 1e-8 ? d2 : 1e-8;
         qx = (nr * dr + ni * di) / den;
         qy = (ni * dr - nr * di) / den;
-      } else if (formula === "halleyCubic") {
+      } else if (fid === 42) {
         const fr = z3x - 1;
         const fi = z3y;
         const fpr = 3 * z2x;
@@ -1333,7 +1468,8 @@ function cpuEscape(formula, x, y, maxIter, jc) {
         const ni = 2 * ffpI;
         const dr = 2 * fp2R - ffppR;
         const di = 2 * fp2I - ffppI;
-        const den = Math.max(dr * dr + di * di, 1e-8);
+        const d2 = dr * dr + di * di;
+        const den = d2 > 1e-8 ? d2 : 1e-8;
         qx = (nr * dr + ni * di) / den;
         qy = (ni * dr - nr * di) / den;
       } else {
@@ -1341,15 +1477,14 @@ function cpuEscape(formula, x, y, maxIter, jc) {
         const ni = z3y;
         const dr = 3 * z2x;
         const di = 3 * z2y;
-        const den = Math.max(dr * dr + di * di, 1e-8);
+        const d2 = dr * dr + di * di;
+        const den = d2 > 1e-8 ? d2 : 1e-8;
         qx = (nr * dr + ni * di) / den;
         qy = (ni * dr - nr * di) / den;
       }
-      if (formula === "novaBasins" || formula === "newtonRelaxSpiral" || formula === "newtonRelaxStorm") {
-        const relaxX = 0.85;
-        const relaxY = 0.35;
-        const rx = formula === "newtonRelaxSpiral" ? 0.60 : (formula === "newtonRelaxStorm" ? -0.30 : relaxX);
-        const ry = formula === "newtonRelaxSpiral" ? 0.60 : (formula === "newtonRelaxStorm" ? 0.90 : relaxY);
+      if (fid === 43 || fid === 44 || fid === 45) {
+        const rx = fid === 44 ? 0.60 : (fid === 45 ? -0.30 : 0.85);
+        const ry = fid === 44 ? 0.60 : (fid === 45 ? 0.90 : 0.35);
         nx = zx - (rx * qx - ry * qy);
         ny = zy - (rx * qy + ry * qx);
       } else {
@@ -1357,11 +1492,16 @@ function cpuEscape(formula, x, y, maxIter, jc) {
         ny = zy - qy;
       }
       if (qx * qx + qy * qy < 1e-12) {
-        return { iter: n, zx: nx, zy: ny, root: basinRootId(formula, nx, ny), mag2: nx * nx + ny * ny };
+        _SAMPLE.iter = n; _SAMPLE.zx = nx; _SAMPLE.zy = ny;
+        _SAMPLE.root = basinRootId(formula, nx, ny); _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+        _SAMPLE.mag2 = nx * nx + ny * ny;
+        return _SAMPLE;
       }
-    } else if (formula === "mandelbox") {
-      let bx = Math.max(-1, Math.min(1, zx)) * 2 - zx;
-      let by = Math.max(-1, Math.min(1, zy)) * 2 - zy;
+    } else if (fid === 31) {
+      const clx = zx < -1 ? -1 : (zx > 1 ? 1 : zx);
+      const cly = zy < -1 ? -1 : (zy > 1 ? 1 : zy);
+      let bx = clx * 2 - zx;
+      let by = cly * 2 - zy;
       const r2 = bx * bx + by * by;
       if (r2 < 0.25) {
         bx *= 4; by *= 4;
@@ -1377,42 +1517,75 @@ function cpuEscape(formula, x, y, maxIter, jc) {
 
     zx = nx; zy = ny;
     const mag2 = zx * zx + zy * zy;
-    if (!Number.isFinite(mag2)) return { iter: n, zx, zy, root: supportsBasinColor(formula) ? basinRootId(formula, zx, zy) : undefined, trap, trapKind, mag2: 1e9 };
-    if (mag2 > 256) return { iter: n, zx, zy, root: supportsBasinColor(formula) ? basinRootId(formula, zx, zy) : undefined, trap, trapKind, mag2 };
+    if (!Number.isFinite(mag2)) {
+      _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
+      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = 1e9;
+      return _SAMPLE;
+    }
+    if (mag2 > 256) {
+      _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+      _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
+      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = mag2;
+      return _SAMPLE;
+    }
   }
 
-  return { iter: maxIter, zx, zy, root: supportsBasinColor(formula) ? basinRootId(formula, zx, zy) : undefined, trap, trapKind, mag2: zx * zx + zy * zy };
+  _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
+  _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
+  _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = zx * zx + zy * zy;
+  return _SAMPLE;
 }
+
+const PALETTE_SHIFTS = new Float64Array([
+  0.00, 0.18, 0.36,
+  0.46, 0.08, 0.02,
+  0.04, 0.30, 0.22,
+  0.28, 0.02, 0.38,
+  0.38, 0.28, 0.04,
+]);
+const TRAP_STYLE_FLOWER = { tScale: 0.17, s0: 0.16, s1: 0.36, s2: 0.66, baseMix: 0.32, glowEdge: 0.18 };
+const TRAP_STYLE_LOTUS  = { tScale: 0.16, s0: 0.08, s1: 0.34, s2: 0.70, baseMix: 0.30, glowEdge: 0.20 };
+const TRAP_STYLE_ROSE   = { tScale: 0.19, s0: 0.22, s1: 0.48, s2: 0.76, baseMix: 0.34, glowEdge: 0.17 };
+const TRAP_STYLE_DEFAULT = { tScale: 0.18, s0: 0.02, s1: 0.32, s2: 0.58, baseMix: 0.35, glowEdge: 0.16 };
+const _COLOR = [0, 0, 0];
+const TWO_PI = Math.PI * 2;
 
 function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESCAPE) {
   if (colorMode === COLOR_MODE_BASIN && sample.root !== undefined) {
     return basinColor(sample.root, sample.iter, maxIter, cycle);
   }
   if (Number.isFinite(sample.trap)) {
-    const trapStyle = {
-      orbitTrapFlower: { tScale: 0.17, shifts: [0.16, 0.36, 0.66], baseMix: 0.32, glowEdge: 0.18 },
-      orbitTrapLotus: { tScale: 0.16, shifts: [0.08, 0.34, 0.70], baseMix: 0.30, glowEdge: 0.20 },
-      orbitTrapRoseJulia: { tScale: 0.19, shifts: [0.22, 0.48, 0.76], baseMix: 0.34, glowEdge: 0.17 },
-    }[sample.trapKind] || { tScale: 0.18, shifts: [0.02, 0.32, 0.58], baseMix: 0.35, glowEdge: 0.16 };
-    const t = Math.max(0, Math.min(1, -Math.log(Math.max(sample.trap, 1e-6)) * trapStyle.tScale + cycle * 0.18));
-    const g = Math.max(0, Math.min(1, (trapStyle.glowEdge - sample.trap) / trapStyle.glowEdge));
+    const tk = sample.trapKind;
+    const ts = tk === "orbitTrapFlower" ? TRAP_STYLE_FLOWER
+             : tk === "orbitTrapLotus" ? TRAP_STYLE_LOTUS
+             : tk === "orbitTrapRoseJulia" ? TRAP_STYLE_ROSE
+             : TRAP_STYLE_DEFAULT;
+    const trap = sample.trap;
+    let t = -Math.log(trap > 1e-6 ? trap : 1e-6) * ts.tScale + cycle * 0.18;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    let g = (ts.glowEdge - trap) / ts.glowEdge;
+    g = g < 0 ? 0 : (g > 1 ? 1 : g);
     const glow = g * g * (3 - 2 * g);
-    return trapStyle.shifts.map(shift => {
-      const base = (0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255;
-      return Math.round(base * (trapStyle.baseMix + (1 - trapStyle.baseMix) * glow));
-    });
+    const mix = ts.baseMix + (1 - ts.baseMix) * glow;
+    _COLOR[0] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s0))) * 255 * mix);
+    _COLOR[1] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s1))) * 255 * mix);
+    _COLOR[2] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s2))) * 255 * mix);
+    return _COLOR;
   }
-  if (sample.iter >= maxIter) return [0, 0, 0];
-  const sm = sample.iter - Math.log2(Math.max(1, Math.log2(sample.mag2))) + 4;
+  if (sample.iter >= maxIter) {
+    _COLOR[0] = 0; _COLOR[1] = 0; _COLOR[2] = 0;
+    return _COLOR;
+  }
+  const mag2 = sample.mag2;
+  const logMag = Math.log2(mag2);
+  const sm = sample.iter - Math.log2(logMag > 1 ? logMag : 1) + 4;
   const t = sm / maxIter + cycle;
-  const shifts = [
-    [0.00, 0.18, 0.36],
-    [0.46, 0.08, 0.02],
-    [0.04, 0.30, 0.22],
-    [0.28, 0.02, 0.38],
-    [0.38, 0.28, 0.04],
-  ][paletteIdx] || [0.00, 0.18, 0.36];
-  return shifts.map(shift => Math.round((0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255));
+  const base = (paletteIdx >= 0 && paletteIdx < 5) ? paletteIdx * 3 : 0;
+  _COLOR[0] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base]))) * 255);
+  _COLOR[1] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 1]))) * 255);
+  _COLOR[2] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 2]))) * 255);
+  return _COLOR;
 }
 
 function makeCpuSnapshot() {

@@ -2,6 +2,26 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.1.0] — 2026-04-23
+
+### Performance
+
+- Integer formula dispatch replaces per-iteration string comparisons in `cpuEscape`
+- Mandelbrot cardioid/period-2 bulb early-exit skips the iteration loop for interior points
+- Zero-allocation hot loop: reusable `_SAMPLE`, `_COLOR`, `_BASIN_COLOR` scratch objects eliminate per-pixel garbage
+- Inlined `Math.abs`, `Math.hypot`, and clamp operations via ternary expressions
+- `cpuColor` palette and trap-style tables hoisted to module scope; `.map()` allocations removed
+- Init-once CPU worker protocol: per-pass snapshot sent once per worker instead of per batch, cutting postMessage payload by ~1000× on a full-frame pass
+- Batched worker dispatch (16,384 blocks per message) reduces round-trip overhead without blocking the main thread on paint
+
+### UI
+
+- Hide/show HUD panel (× button in header, ☰ restore button, `H` keyboard shortcut)
+- Iteration slider displays live value
+- `Refine ON` state label when CPU refinement is active
+- Seven-column button grid with consistent sizing; ellipsis on overflow
+- Mobile layout: tips bar repositioned above the minimap, 4-column button grid
+
 ## [1.0.0] — 2026-04-23
 
 Initial release.
