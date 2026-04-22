@@ -976,6 +976,75 @@ void main() {
 }
 `;
 
+// -- Nova Julia Bloom -----------------------------------------------------------
+const novaJuliaBloomFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  vec2 relax = vec2(0.78, 0.28);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, z2.x*z.y + z2.y*z.x);
+    vec2 delta = cdiv(z3 - vec2(1.0, 0.0), 3.0*z2);
+    z -= vec2(relax.x * delta.x - relax.y * delta.y,
+              relax.x * delta.y + relax.y * delta.x);
+    z += c;
+    if (dot(delta, delta) < 1e-12) break;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Rational Mandelbrot Lace --------------------------------------------------
+const rationalMandelbrotLaceFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    vec2 inv = cdiv(vec2(0.22, -0.11), z2 + vec2(0.18, 0.06));
+    z = z2 + inv + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Orbit Trap Flower ---------------------------------------------------------
+const orbitTrapFlowerFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float trap = 32.0;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    float a = atan(z.y, z.x);
+    float petals = abs(length(z) - (0.35 + 0.12 * cos(6.0 * a)));
+    float ring = abs(length(z - vec2(-0.18, 0.08)) - 0.28);
+    float axis = min(abs(z.x + 0.18), abs(z.y - 0.08));
+    trap = min(trap, min(petals, min(ring, axis)));
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  float t = clamp(-log(max(trap, 1e-6)) * 0.17 + uCycle * 0.18, 0.0, 1.0);
+  vec3 base = cospalette(t, vec3(0.16, 0.36, 0.66));
+  float glow = smoothstep(0.18, 0.0, trap);
+  gl_FragColor = vec4(mix(base * 0.32, base, glow), 1.0);
+}
+`;
+
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
@@ -988,6 +1057,7 @@ const FRACTALS = [
   { name: "Celtic Mandelbrot",   category: "Folded",        src: celticFrag,           center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celtic" },
   { name: "Buffalo",             category: "Folded",        src: buffaloFrag,          center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "buffalo" },
   { name: "Phoenix Julia",       category: "Julia",         src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true,  formula: "phoenix" },
+  { name: "Phoenix Julia - Bloom", category: "Julia",       src: phoenixFrag,          center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.58, 0.42], formula: "phoenix" },
   { name: "Perpendicular Mandelbrot", category: "Perpendicular", src: perpendicularMandelbrotFrag, center: [0.0, 0.0], scale: 3.5, julia: false, formula: "perpendicularMandelbrot" },
   { name: "Celtic Heart",        category: "Folded",        src: celticHeartFrag,      center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celticHeart" },
   { name: "Perpendicular Buffalo", category: "Perpendicular", src: perpendicularBuffaloFrag, center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "perpendicularBuffalo" },
@@ -1014,7 +1084,9 @@ const FRACTALS = [
   { name: "Magnet Type I",       category: "Rational",      src: magnetFrag,           center: [1.0,  0.0], scale: 4.0, julia: false, formula: "magnet" },
   { name: "Cosine Mandelbrot",   category: "Transcendental", src: cosineMandelbrotFrag, center: [0.0,  0.0], scale: 6.0, julia: false, formula: "cosine" },
   { name: "Glynn Julia",         category: "Julia",         src: glynnJuliaFrag,       center: [0.0,  0.0], scale: 3.2, julia: false, juliaParam: [-0.2, 0.0], formula: "glynnJulia" },
+  { name: "Glynn Julia - Rosette", category: "Julia",       src: glynnJuliaFrag,       center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [-0.13, 0.18], formula: "glynnJulia" },
   { name: "Sine Julia",          category: "Julia",         src: sineJuliaFrag,        center: [0.0,  0.0], scale: 6.0, julia: false, juliaParam: [-0.12, 0.74], formula: "sineJulia" },
+  { name: "Sine Julia - Veil",    category: "Julia",        src: sineJuliaFrag,        center: [0.0,  0.0], scale: 5.4, julia: false, juliaParam: [0.22, 0.62], formula: "sineJulia" },
   { name: "Feather",             category: "Rational",      src: featherFrag,          center: [0.0,  0.0], scale: 4.0, julia: false, formula: "feather" },
   { name: "Newton Cubic Basins", category: "Basins",        src: newtonCubicFrag,      center: [0.0,  0.0], scale: 3.4, julia: false, formula: "newtonCubic", basin: true },
   { name: "Nova Basins",         category: "Basins",        src: novaBasinsFrag,       center: [0.0,  0.0], scale: 3.2, julia: false, formula: "novaBasins", basin: true },
@@ -1025,6 +1097,9 @@ const FRACTALS = [
   { name: "Mandelbar Julia",     category: "Julia",         src: mandelbarJuliaFrag,   center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.18, 0.68], formula: "mandelbarJulia" },
   { name: "Rational Julia - Lace", category: "Julia",       src: rationalJuliaLaceFrag, center: [0.0, 0.0], scale: 3.2, julia: false, juliaParam: [-0.32, 0.58], formula: "rationalJuliaLace" },
   { name: "Orbit Trap Mandelbrot", category: "Orbit Trap",  src: orbitTrapMandelbrotFrag, center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapMandelbrot" },
+  { name: "Nova Julia Bloom",    category: "Julia",         src: novaJuliaBloomFrag,   center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.16, 0.08], formula: "novaJuliaBloom" },
+  { name: "Rational Mandelbrot Lace", category: "Rational", src: rationalMandelbrotLaceFrag, center: [-0.35, 0.0], scale: 3.3, julia: false, formula: "rationalMandelbrotLace" },
+  { name: "Orbit Trap Flower",   category: "Orbit Trap",    src: orbitTrapFlowerFrag,  center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapFlower" },
 ];
 
 const FORMULA_BEHAVIOR = Object.freeze({
@@ -1039,6 +1114,7 @@ const FORMULA_BEHAVIOR = Object.freeze({
   sineJulia: { initial: "julia" },
   mandelbarJulia: { initial: "julia" },
   rationalJuliaLace: { initial: "julia" },
+  novaJuliaBloom: { initial: "julia" },
   phoenix: { initial: "phoenix" },
   lambda: { initial: "lambda" },
   mandelbox: { initial: "point" },
@@ -1049,6 +1125,7 @@ const FORMULA_BEHAVIOR = Object.freeze({
   newtonRelaxStorm: { initial: "point", newton: true, basinRoots: 3, colorModes: ["escape", "basin"] },
   halleyCubic: { initial: "point", newton: true, basinRoots: 3, colorModes: ["escape", "basin"] },
   orbitTrapMandelbrot: { orbitTrap: true },
+  orbitTrapFlower: { orbitTrap: true },
 });
 
 FRACTALS.forEach(fractal => {

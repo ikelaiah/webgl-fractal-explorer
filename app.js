@@ -729,13 +729,46 @@ function previewEscape(fractalIdx, x, y) {
       const den = Math.max(dr * dr + di * di, 1e-8);
       nx = z2x + (cx * dr + cy * di) / den;
       ny = z2y + (cy * dr - cx * di) / den;
-    } else if (formula === "orbitTrapMandelbrot") {
+    } else if (formula === "novaJuliaBloom") {
+      const z2x = x2 - y2;
+      const z2y = 2 * xy;
+      const z3x = z2x * zx - z2y * zy;
+      const z3y = z2x * zy + z2y * zx;
+      const nr = z3x - 1;
+      const ni = z3y;
+      const dr = 3 * z2x;
+      const di = 3 * z2y;
+      const den = Math.max(dr * dr + di * di, 1e-8);
+      const qx = (nr * dr + ni * di) / den;
+      const qy = (ni * dr - nr * di) / den;
+      const rx = 0.78;
+      const ry = 0.28;
+      nx = zx - (rx * qx - ry * qy) + cx;
+      ny = zy - (rx * qy + ry * qx) + cy;
+      if (qx * qx + qy * qy < 1e-12) return n;
+    } else if (formula === "rationalMandelbrotLace") {
+      const z2x = x2 - y2;
+      const z2y = 2 * xy;
+      const dr = z2x + 0.18;
+      const di = z2y + 0.06;
+      const den = Math.max(dr * dr + di * di, 1e-8);
+      nx = z2x + (0.22 * dr - 0.11 * di) / den + cx;
+      ny = z2y + (-0.11 * dr - 0.22 * di) / den + cy;
+    } else if (formula === "orbitTrapMandelbrot" || formula === "orbitTrapFlower") {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
-      const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
-      const cross = Math.min(Math.abs(nx), Math.abs(ny));
-      const diagonal = Math.abs(nx + ny) * 0.70710678118;
-      trap = Math.min(trap, circle, cross, diagonal);
+      if (formula === "orbitTrapFlower") {
+        const a = Math.atan2(ny, nx);
+        const petals = Math.abs(Math.hypot(nx, ny) - (0.35 + 0.12 * Math.cos(6 * a)));
+        const ring = Math.abs(Math.hypot(nx + 0.18, ny - 0.08) - 0.28);
+        const axis = Math.min(Math.abs(nx + 0.18), Math.abs(ny - 0.08));
+        trap = Math.min(trap, petals, ring, axis);
+      } else {
+        const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
+        const cross = Math.min(Math.abs(nx), Math.abs(ny));
+        const diagonal = Math.abs(nx + ny) * 0.70710678118;
+        trap = Math.min(trap, circle, cross, diagonal);
+      }
     } else if (meta.newton) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
@@ -1165,13 +1198,48 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       const den = Math.max(dr * dr + di * di, 1e-8);
       nx = z2x + (cx * dr + cy * di) / den;
       ny = z2y + (cy * dr - cx * di) / den;
-    } else if (formula === "orbitTrapMandelbrot") {
+    } else if (formula === "novaJuliaBloom") {
+      const z2x = x2 - y2;
+      const z2y = 2 * xy;
+      const z3x = z2x * zx - z2y * zy;
+      const z3y = z2x * zy + z2y * zx;
+      const nr = z3x - 1;
+      const ni = z3y;
+      const dr = 3 * z2x;
+      const di = 3 * z2y;
+      const den = Math.max(dr * dr + di * di, 1e-8);
+      const qx = (nr * dr + ni * di) / den;
+      const qy = (ni * dr - nr * di) / den;
+      const rx = 0.78;
+      const ry = 0.28;
+      nx = zx - (rx * qx - ry * qy) + cx;
+      ny = zy - (rx * qy + ry * qx) + cy;
+      if (qx * qx + qy * qy < 1e-12) {
+        return { iter: n + 1, zx: nx, zy: ny, mag2: nx * nx + ny * ny };
+      }
+    } else if (formula === "rationalMandelbrotLace") {
+      const z2x = x2 - y2;
+      const z2y = 2 * xy;
+      const dr = z2x + 0.18;
+      const di = z2y + 0.06;
+      const den = Math.max(dr * dr + di * di, 1e-8);
+      nx = z2x + (0.22 * dr - 0.11 * di) / den + cx;
+      ny = z2y + (-0.11 * dr - 0.22 * di) / den + cy;
+    } else if (formula === "orbitTrapMandelbrot" || formula === "orbitTrapFlower") {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
-      const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
-      const cross = Math.min(Math.abs(nx), Math.abs(ny));
-      const diagonal = Math.abs(nx + ny) * 0.70710678118;
-      trap = Math.min(trap, circle, cross, diagonal);
+      if (formula === "orbitTrapFlower") {
+        const a = Math.atan2(ny, nx);
+        const petals = Math.abs(Math.hypot(nx, ny) - (0.35 + 0.12 * Math.cos(6 * a)));
+        const ring = Math.abs(Math.hypot(nx + 0.18, ny - 0.08) - 0.28);
+        const axis = Math.min(Math.abs(nx + 0.18), Math.abs(ny - 0.08));
+        trap = Math.min(trap, petals, ring, axis);
+      } else {
+        const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
+        const cross = Math.min(Math.abs(nx), Math.abs(ny));
+        const diagonal = Math.abs(nx + ny) * 0.70710678118;
+        trap = Math.min(trap, circle, cross, diagonal);
+      }
     } else if (meta.newton) {
       const z2x = x2 - y2;
       const z2y = 2 * xy;
