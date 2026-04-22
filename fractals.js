@@ -96,7 +96,8 @@ vec3 basinColor(float root, float iter, float maxIter) {
   if      (root < 0.5) base = vec3(0.96, 0.34, 0.22);
   else if (root < 1.5) base = vec3(0.18, 0.72, 1.00);
   else if (root < 2.5) base = vec3(0.78, 0.92, 0.28);
-  else                 base = vec3(0.76, 0.43, 1.00);
+  else if (root < 3.5) base = vec3(0.76, 0.43, 1.00);
+  else                 base = vec3(0.98, 0.80, 0.18);
   float shade = 0.28 + 0.72 * pow(1.0 - clamp(iter / maxIter, 0.0, 1.0), 0.7);
   float ring = 0.86 + 0.14 * cos(TAU * (iter * 0.08 + uCycle));
   return base * shade * ring;
@@ -1117,6 +1118,183 @@ void main() {
 }
 `;
 
+// ── Exponential Mandelbrot (z ← exp(z) + c) ──────────────────────────────────
+const expMandelbrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float ey = clamp(z.y, -8.0, 8.0);
+    float ex = exp(clamp(z.x, -8.0, 8.0));
+    z = vec2(ex * cos(ey), ex * sin(ey)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// ── Magnet Type II ────────────────────────────────────────────────────────────
+// Magnet II: z ← ((z³ + 3(c−1)z + (c−1)(c−2)) / (3z² + 3(c−2)z + (c−1)(c−2)+1))²
+const magnetIIFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  // precompute constant complex terms from c
+  vec2 cm1 = c - vec2(1.0, 0.0);               // (c-1)
+  vec2 cm2 = c - vec2(2.0, 0.0);               // (c-2)
+  vec2 cm1cm2 = vec2(cm1.x*cm2.x - cm1.y*cm2.y, cm1.x*cm2.y + cm1.y*cm2.x); // (c-1)(c-2)
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, z2.x*z.y + z2.y*z.x);
+    // numerator: z³ + 3(c−1)z + (c−1)(c−2)
+    vec2 nr = z3 + 3.0*vec2(cm1.x*z.x - cm1.y*z.y, cm1.x*z.y + cm1.y*z.x) + cm1cm2;
+    // denominator: 3z² + 3(c−2)z + (c−1)(c−2) + 1
+    vec2 dr = 3.0*z2 + 3.0*vec2(cm2.x*z.x - cm2.y*z.y, cm2.x*z.y + cm2.y*z.x)
+              + cm1cm2 + vec2(1.0, 0.0);
+    vec2 q = cdiv(nr, dr);
+    z = vec2(q.x*q.x - q.y*q.y, 2.0*q.x*q.y);
+    if ((z.x-1.0)*(z.x-1.0) + z.y*z.y < 1e-6) break;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// ── Newton Quintic Basins (z⁵ − 1 = 0, five roots) ───────────────────────────
+const newtonQuinticFrag = fragHeader + `
+float quinticRootId(vec2 z) {
+  float best = 1e9; float id = 0.0;
+  for (int k = 0; k < 5; k++) {
+    float angle = TAU * float(k) / 5.0;
+    vec2 r = vec2(cos(angle), sin(angle));
+    float d = dot(z - r, z - r);
+    if (d < best) { best = d; id = float(k); }
+  }
+  return id;
+}
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    vec2 z4 = vec2(z2.x*z2.x - z2.y*z2.y, 2.0*z2.x*z2.y);
+    vec2 z5 = vec2(z4.x*z.x - z4.y*z.y, z4.x*z.y + z4.y*z.x);
+    vec2 delta = cdiv(z5 - vec2(1.0, 0.0), 5.0*z4);
+    z -= delta;
+    if (dot(delta, delta) < 1e-12) break;
+    if (dot(z, z) > 1e12) break;
+    i += 1.0;
+  }
+  if (uColorMode == 1) {
+    gl_FragColor = vec4(basinColor(quinticRootId(z), i, mi), 1.0);
+  } else {
+    gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+  }
+}
+`;
+
+// ── Orbit Trap Star ───────────────────────────────────────────────────────────
+const orbitTrapStarFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float trap = 32.0;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    float a = atan(z.y, z.x);
+    float r = length(z);
+    float spine = abs(r - (0.40 + 0.22 * abs(cos(5.0 * a))));
+    float hub   = abs(r - 0.12);
+    float spoke = min(min(abs(z.x), abs(z.y)),
+                      min(abs(z.x - z.y) * 0.7071, abs(z.x + z.y) * 0.7071));
+    trap = min(trap, min(spine, min(hub, spoke * 0.6)));
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  float t = clamp(-log(max(trap, 1e-6)) * 0.20 + uCycle * 0.18, 0.0, 1.0);
+  vec3 base = cospalette(t, vec3(0.30, 0.10, 0.55));
+  float glow = smoothstep(0.20, 0.0, trap);
+  gl_FragColor = vec4(mix(base * 0.28, base, glow), 1.0);
+}
+`;
+
+// ── Perpendicular Burning Ship ────────────────────────────────────────────────
+const perpendicularBurningShipFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y + c.x, -2.0*abs(z.x)*z.y + c.y);
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// ── Heart Julia (Quartic Julia preset c = 0.38 + 0.34i) ──────────────────────
+// Same shader as quartic Julia — just a registry entry with a special c value.
+
+// ── Zubieta Julia (z ← z² − c/z³) ───────────────────────────────────────────
+const zubietaJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    vec2 z3 = vec2(z2.x*z.x - z2.y*z.y, z2.x*z.y + z2.y*z.x);
+    z = z2 - cdiv(c, z3);
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// ── Orbit Trap Web (Mandelbrot + grid-line trap) ──────────────────────────────
+const orbitTrapWebFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float trap = 32.0;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    vec2 frac = abs(fract(z * 1.5) - 0.5);
+    float grid = min(frac.x, frac.y);
+    float circ = abs(length(z) - 0.5);
+    trap = min(trap, min(grid * 0.9, circ));
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  float t = clamp(-log(max(trap, 1e-6)) * 0.22 + uCycle * 0.18, 0.0, 1.0);
+  vec3 base = cospalette(t, vec3(0.05, 0.42, 0.28));
+  float glow = smoothstep(0.18, 0.0, trap);
+  gl_FragColor = vec4(mix(base * 0.30, base, glow), 1.0);
+}
+`;
+
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
@@ -1176,6 +1354,17 @@ const FRACTALS = [
   { name: "Orbit Trap Flower",   category: "Orbit Trap",    src: orbitTrapFlowerFrag,  center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapFlower" },
   { name: "Orbit Trap Lotus",    category: "Orbit Trap",    src: orbitTrapLotusFrag,   center: [-0.45, 0.0], scale: 3.3, julia: false, formula: "orbitTrapLotus" },
   { name: "Orbit Trap Rose Julia", category: "Orbit Trap",  src: orbitTrapRoseJuliaFrag, center: [0.0, 0.0], scale: 3.0, julia: false, juliaParam: [-0.56, 0.38], formula: "orbitTrapRoseJulia" },
+
+  // ── New fractals ──────────────────────────────────────────────────────────
+  { name: "Exponential Mandelbrot", category: "Transcendental", src: expMandelbrotFrag, center: [-1.0, 0.0], scale: 6.0, julia: false, formula: "expMandelbrot" },
+  { name: "Magnet Type II",        category: "Rational",      src: magnetIIFrag,         center: [0.0,  0.0], scale: 5.0, julia: false, formula: "magnetII" },
+  { name: "Newton Quintic Basins", category: "Basins",        src: newtonQuinticFrag,    center: [0.0,  0.0], scale: 3.4, julia: false, formula: "newtonQuintic", basin: true },
+  { name: "Orbit Trap Star",       category: "Orbit Trap",    src: orbitTrapStarFrag,    center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapStar" },
+  { name: "Orbit Trap Web",        category: "Orbit Trap",    src: orbitTrapWebFrag,     center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapWeb" },
+  { name: "Perpendicular Burning Ship", category: "Perpendicular", src: perpendicularBurningShipFrag, center: [-0.5, -0.5], scale: 3.5, julia: false, formula: "perpendicularBurningShip" },
+  { name: "Zubieta Julia",         category: "Julia",         src: zubietaJuliaFrag,     center: [0.0,  0.0], scale: 3.2, julia: false, juliaParam: [-0.54, 0.50], formula: "zubietaJulia" },
+  { name: "Zubieta Julia - Spiral", category: "Julia",        src: zubietaJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.22, 0.72], formula: "zubietaJulia" },
+  { name: "Quartic Julia - Crown", category: "Julia",         src: quarticJuliaFrag,     center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [0.0, 0.65], formula: "quarticJulia" },
 ];
 
 const FORMULA_BEHAVIOR = Object.freeze({
@@ -1205,6 +1394,10 @@ const FORMULA_BEHAVIOR = Object.freeze({
   orbitTrapFlower: { orbitTrap: true },
   orbitTrapLotus: { orbitTrap: true },
   orbitTrapRoseJulia: { initial: "julia", orbitTrap: true },
+  orbitTrapStar: { orbitTrap: true },
+  orbitTrapWeb: { orbitTrap: true },
+  zubietaJulia: { initial: "julia" },
+  newtonQuintic: { initial: "point", newton: true, basinRoots: 5, colorModes: ["escape", "basin"] },
 });
 
 FRACTALS.forEach(fractal => {

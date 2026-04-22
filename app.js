@@ -131,7 +131,7 @@ const DEFAULT_ITER = 256;
 const CAMERA_EASE = 12;
 const CAMERA_SETTLE_EPS = 32 * Number.EPSILON;
 const RESET_VIEW_PADDING = 1.08;
-const MINIMAP_ITER = 56;
+const MINIMAP_ITER = 128;
 const CPU_DPR = 1;
 const CPU_FRAME_BUDGET_MS = 10;
 const CPU_REFINE_DELAY_MS = 180;
@@ -583,8 +583,23 @@ function quarticRootId(zx, zy) {
   return best;
 }
 
+function quinticRootId(zx, zy) {
+  let best = 0, bestDist = Infinity;
+  for (let k = 0; k < 5; k++) {
+    const angle = (Math.PI * 2 * k) / 5;
+    const dx = zx - Math.cos(angle);
+    const dy = zy - Math.sin(angle);
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) { best = k; bestDist = dist; }
+  }
+  return best;
+}
+
 function basinRootId(formula, zx, zy) {
-  return formulaMeta(formula).basinRoots === 4 ? quarticRootId(zx, zy) : cubicRootId(zx, zy);
+  const roots = formulaMeta(formula).basinRoots;
+  if (roots === 5) return quinticRootId(zx, zy);
+  if (roots === 4) return quarticRootId(zx, zy);
+  return cubicRootId(zx, zy);
 }
 
 const BASIN_BASES = new Uint8Array([
@@ -592,11 +607,12 @@ const BASIN_BASES = new Uint8Array([
   46, 184, 255,
   199, 235, 71,
   194, 110, 255,
+  250, 204, 46,
 ]);
 const _BASIN_COLOR = [0, 0, 0];
 
 function basinColor(root, iter, maxIter, cycle = 0) {
-  const idx = (root >= 0 && root < 4) ? root * 3 : 0;
+  const idx = (root >= 0 && root < 5) ? root * 3 : 0;
   const m = maxIter > 0 ? maxIter : 1;
   const k = iter / m;
   const shade = 0.28 + 0.72 * Math.pow(1 - (k > 1 ? 1 : k), 0.7);
@@ -1024,6 +1040,7 @@ function cpuWorkerSource() {
     supportsBasinColor,
     cubicRootId,
     quarticRootId,
+    quinticRootId,
     basinRootId,
     basinColor,
     mandelbrotInSet,
@@ -1056,6 +1073,7 @@ const BASIN_BASES = new Uint8Array([
   46, 184, 255,
   199, 235, 71,
   194, 110, 255,
+  250, 204, 46,
 ]);
 const _SAMPLE = { iter: 0, zx: 0, zy: 0, root: undefined, trap: Infinity, trapKind: undefined, mag2: 0 };
 const _COLOR = [0, 0, 0];
@@ -1174,12 +1192,19 @@ const FORMULA_ID = {
   orbitTrapLotus: 29,
   orbitTrapRoseJulia: 30,
   mandelbox: 31,
+  expMandelbrot: 32,
+  magnetII: 33,
+  perpendicularBurningShip: 34,
+  zubietaJulia: 35,
+  orbitTrapStar: 36,
+  orbitTrapWeb: 37,
   newtonCubic: 40,
   newtonQuartic: 41,
   halleyCubic: 42,
   novaBasins: 43,
   newtonRelaxSpiral: 44,
   newtonRelaxStorm: 45,
+  newtonQuintic: 46,
 };
 
 function mandelbrotInSet(cx, cy) {
@@ -1552,7 +1577,20 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       const z3x = z2x * zx - z2y * zy;
       const z3y = z2x * zy + z2y * zx;
       let qx, qy;
-      if (fid === 41) {
+      if (fid === 46) {
+        const z4x = z2x * z2x - z2y * z2y;
+        const z4y = 2 * z2x * z2y;
+        const z5x = z4x * zx - z4y * zy;
+        const z5y = z4x * zy + z4y * zx;
+        const nr = z5x - 1;
+        const ni = z5y;
+        const dr = 5 * z4x;
+        const di = 5 * z4y;
+        const d2 = dr * dr + di * di;
+        const den = d2 > 1e-8 ? d2 : 1e-8;
+        qx = (nr * dr + ni * di) / den;
+        qy = (ni * dr - nr * di) / den;
+      } else if (fid === 41) {
         const z4x = z2x * z2x - z2y * z2y;
         const z4y = 2 * z2x * z2y;
         const nr = z4x - 1;
@@ -1622,6 +1660,69 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       }
       nx = 2 * bx + cx;
       ny = 2 * by + cy;
+    } else if (fid === 32) {
+      const eyc = zy < -8 ? -8 : (zy > 8 ? 8 : zy);
+      const ex = Math.exp(zx < -8 ? -8 : (zx > 8 ? 8 : zx));
+      nx = ex * Math.cos(eyc) + cx;
+      ny = ex * Math.sin(eyc) + cy;
+    } else if (fid === 33) {
+      const z2x = x2 - y2, z2y = 2 * xy;
+      const z3x = z2x * zx - z2y * zy, z3y = z2x * zy + z2y * zx;
+      // (c-1) and (c-2)
+      const cm1x = cx - 1, cm1y = cy;
+      const cm2x = cx - 2, cm2y = cy;
+      // (c-1)(c-2)
+      const pp = cm1x * cm2x - cm1y * cm2y, pq = cm1x * cm2y + cm1y * cm2x;
+      // numerator: z³ + 3(c-1)z + (c-1)(c-2)
+      const nrx = z3x + 3 * (cm1x * zx - cm1y * zy) + pp;
+      const nry = z3y + 3 * (cm1x * zy + cm1y * zx) + pq;
+      // denominator: 3z² + 3(c-2)z + (c-1)(c-2) + 1
+      const drx = 3 * z2x + 3 * (cm2x * zx - cm2y * zy) + pp + 1;
+      const dry = 3 * z2y + 3 * (cm2x * zy + cm2y * zx) + pq;
+      const den33 = Math.max(drx * drx + dry * dry, 1e-8);
+      const qx = (nrx * drx + nry * dry) / den33;
+      const qy = (nry * drx - nrx * dry) / den33;
+      nx = qx * qx - qy * qy;
+      ny = 2 * qx * qy;
+      if ((nx - 1) * (nx - 1) + ny * ny < 1e-6) {
+        _SAMPLE.iter = n; _SAMPLE.zx = nx; _SAMPLE.zy = ny;
+        _SAMPLE.root = undefined; _SAMPLE.trap = Infinity; _SAMPLE.trapKind = undefined;
+        _SAMPLE.mag2 = nx * nx + ny * ny;
+        return _SAMPLE;
+      }
+    } else if (fid === 34) {
+      nx = x2 - y2 + cx;
+      ny = -2 * (zx < 0 ? -zx : zx) * zy + cy;
+    } else if (fid === 35) {
+      const z2x = x2 - y2, z2y = 2 * xy;
+      const z3x = z2x * zx - z2y * zy, z3y = z2x * zy + z2y * zx;
+      const den35 = Math.max(z3x * z3x + z3y * z3y, 1e-8);
+      nx = z2x - (cx * z3x + cy * z3y) / den35;
+      ny = z2y - (cy * z3x - cx * z3y) / den35;
+    } else if (fid === 36) {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+      const a36 = Math.atan2(ny, nx);
+      const r36 = Math.sqrt(nx * nx + ny * ny);
+      const spineA = Math.abs(r36 - (0.40 + 0.22 * Math.abs(Math.cos(5 * a36))));
+      const hubA = Math.abs(r36 - 0.12);
+      const sx = nx < 0 ? -nx : nx, sy = ny < 0 ? -ny : ny;
+      const sd1a = Math.abs((nx - ny) * 0.70710678118);
+      const sd2a = Math.abs((nx + ny) * 0.70710678118);
+      const spoke = Math.min(sx < sy ? sx : sy, sd1a < sd2a ? sd1a : sd2a);
+      const m = Math.min(spineA, hubA, spoke * 0.6);
+      if (m < trap) trap = m;
+    } else if (fid === 37) {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+      const fx = (((nx * 1.5) % 1) + 1) % 1 - 0.5;
+      const fy = (((ny * 1.5) % 1) + 1) % 1 - 0.5;
+      const fxa = fx < 0 ? -fx : fx, fya = fy < 0 ? -fy : fy;
+      const grid = fxa < fya ? fxa : fya;
+      const r37 = Math.sqrt(nx * nx + ny * ny);
+      const circ = Math.abs(r37 - 0.5);
+      const m = Math.min(grid * 0.9, circ);
+      if (m < trap) trap = m;
     } else {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
