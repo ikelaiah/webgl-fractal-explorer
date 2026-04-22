@@ -80,6 +80,10 @@ Performance optimisations in the CPU inner loop:
 - **Inlined `Math.abs` / `Math.hypot` / clamp** calls via ternary expressions
 - **Init-once worker protocol** — the per-pass snapshot is sent to each worker once, not with every batch message, cutting postMessage payload by ~1000× on a full-frame pass
 
+### Deep-zoom drag preview
+
+At zoom levels above 10⁵× the GPU pixel grid becomes visibly blocky. When **Refine** is on and a drag begins past this threshold, a coarse pass-0 (8 px blocks) CPU render fires immediately on the drag-start viewport. The preview canvas is offset via CSS `transform: translate()` as you drag — zero re-render cost — so the fractal shape slides with the pointer. The translate is held in place after pointer-up, then cleared the moment the full 4-pass refinement paints its first frame, eliminating the stale-frame flash.
+
 ### Precision
 
 - GPU: triple-single arithmetic (~72-bit mantissa, pixelation deferred to ~10¹⁴× zoom)

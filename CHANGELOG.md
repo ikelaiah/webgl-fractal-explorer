@@ -2,6 +2,15 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.2.0] — 2026-04-23
+
+### Deep-zoom drag preview
+
+- At zoom ≥ 10⁵× with Refine on, dragging triggers an immediate pass-0 CPU render of the drag-start viewport so a recognisable fractal shape is visible instead of swimming GPU pixels
+- Preview canvas is offset via CSS `transform: translate()` during drag — zero re-render cost
+- Translate is held after pointer-up to avoid a stale-frame snap-back flash; cleared when the first frame of the full 4-pass refinement lands
+- `CPU_PREVIEW_ZOOM_THRESHOLD = 1e5` constant for easy tuning
+
 ## [1.1.0] — 2026-04-23
 
 ### Performance
