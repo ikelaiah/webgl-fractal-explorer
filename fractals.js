@@ -564,10 +564,10 @@ void main() {
   float i = 0.0, mi = float(uIter);
   for (int n = 0; n < MAX_ITER; n++) {
     if (n >= uIter) break;
-    float r = length(z);
-    float a = atan(z.y, z.x) * 8.0;
-    float rp = pow(r, 8.0);
-    z = vec2(cos(a), sin(a)) * rp + c;
+    vec2 z2 = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y);
+    vec2 z4 = vec2(z2.x * z2.x - z2.y * z2.y, 2.0 * z2.x * z2.y);
+    vec2 z8 = vec2(z4.x * z4.x - z4.y * z4.y, 2.0 * z4.x * z4.y);
+    z = z8 + c;
     if (dot(z, z) > 256.0) break;
     i += 1.0;
   }
