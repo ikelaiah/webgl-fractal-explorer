@@ -390,6 +390,25 @@ function resize() {
   }
 }
 
+function renderViewport() {
+  const width = Math.max(canvas.width, 1);
+  const height = Math.max(canvas.height, 1);
+  const worldWidth = width * state.pixelScale;
+  const worldHeight = height * state.pixelScale;
+  const x0 = state.centerX - worldWidth * 0.5;
+  const y0 = state.centerY - worldHeight * 0.5;
+  return {
+    width,
+    height,
+    worldWidth,
+    worldHeight,
+    x0,
+    y0,
+    y1: y0 + worldHeight,
+    pixelScale: state.pixelScale,
+  };
+}
+
 // ─── Julia C ──────────────────────────────────────────────────────────────────
 
 function juliaC() {
@@ -961,8 +980,8 @@ self.onmessage = event => {
     const yStart = row * step;
     const sampleX = Math.min(xStart + step * 0.5, snapshot.width - 0.5);
     const sampleY = Math.min(yStart + step * 0.5, snapshot.height - 0.5);
-    const worldX = snapshot.x0 + sampleX * snapshot.scale;
-    const worldY = snapshot.y1 - sampleY * snapshot.scale;
+    const worldX = snapshot.x0 + sampleX * snapshot.scaleX;
+    const worldY = snapshot.y1 - sampleY * snapshot.scaleY;
     const color = cpuColor(
       cpuEscape(snapshot.formula, worldX, worldY, snapshot.iter, snapshot.juliaC),
       snapshot.iter,
@@ -1264,9 +1283,7 @@ function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESC
 }
 
 function makeCpuSnapshot() {
-  const worldWidth = canvas.width * state.pixelScale;
-  const worldHeight = canvas.height * state.pixelScale;
-  const scale = worldWidth / Math.max(deepCanvas.width, 1);
+  const viewport = renderViewport();
   return {
     fractalIdx: state.fractalIdx,
     formula: FRACTALS[state.fractalIdx].formula || "mandelbrot",
@@ -1276,9 +1293,10 @@ function makeCpuSnapshot() {
     iter: getRenderIterations(),
     width: deepCanvas.width,
     height: deepCanvas.height,
-    x0: state.centerX - worldWidth * 0.5,
-    y1: state.centerY + worldHeight * 0.5,
-    scale,
+    x0: viewport.x0,
+    y1: viewport.y1,
+    scaleX: viewport.worldWidth / Math.max(deepCanvas.width, 1),
+    scaleY: viewport.worldHeight / Math.max(deepCanvas.height, 1),
     juliaC: getRenderJuliaC(),
   };
 }
@@ -1323,8 +1341,8 @@ function paintCpuBlock(blockIndex) {
   const yEnd = Math.min(yStart + step, snap.height);
   const sampleX = Math.min(xStart + step * 0.5, snap.width - 0.5);
   const sampleY = Math.min(yStart + step * 0.5, snap.height - 0.5);
-  const worldX = snap.x0 + sampleX * snap.scale;
-  const worldY = snap.y1 - sampleY * snap.scale;
+  const worldX = snap.x0 + sampleX * snap.scaleX;
+  const worldY = snap.y1 - sampleY * snap.scaleY;
   const color = cpuColor(
     cpuEscape(snap.formula, worldX, worldY, snap.iter, snap.juliaC),
     snap.iter,
@@ -1757,21 +1775,20 @@ function render(now) {
 
   const { prog, loc } = getProgram(state.fractalIdx);
   const jc = getRenderJuliaC();
+  const viewport = renderViewport();
 
-  const x0 = state.centerX - canvas.width  * 0.5 * state.pixelScale;
-  const y0 = state.centerY - canvas.height * 0.5 * state.pixelScale;
-  const [x0Hi, x0Mid, x0Lo] = tsSplit(x0);
-  const [y0Hi, y0Mid, y0Lo] = tsSplit(y0);
+  const [x0Hi, x0Mid, x0Lo] = tsSplit(viewport.x0);
+  const [y0Hi, y0Mid, y0Lo] = tsSplit(viewport.y0);
 
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   gl.enableVertexAttribArray(loc.pos);
   gl.vertexAttribPointer(loc.pos, 2, gl.FLOAT, false, 0, 0);
 
-  gl.uniform2f(loc.res,    canvas.width, canvas.height);
+  gl.uniform2f(loc.res,    viewport.width, viewport.height);
   gl.uniform3f(loc.x0,    x0Hi, x0Mid, x0Lo);
   gl.uniform3f(loc.y0,    y0Hi, y0Mid, y0Lo);
-  gl.uniform1f(loc.scale,  state.pixelScale);
+  gl.uniform1f(loc.scale,  viewport.pixelScale);
   gl.uniform1i(loc.iter,   getRenderIterations());
   gl.uniform1f(loc.palette, state.palette);
   gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
