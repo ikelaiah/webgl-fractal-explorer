@@ -138,7 +138,7 @@ const CPU_REFINE_DELAY_MS = 180;
 const CPU_PASSES = [8, 4, 2, 1];
 const CPU_MAX_WORKERS = 8;
 const CPU_WORKER_COUNT_OVERRIDE = 8;
-const CPU_WORKER_BATCH_BLOCKS = 131072;
+const CPU_WORKER_BATCH_BLOCKS = 16384;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
 
@@ -1025,27 +1025,41 @@ const FORMULA_META = ${JSON.stringify(FORMULA_META)};
 
 ${sharedFunctions}
 
+let _snap = null, _step = 0, _cols = 0, _totalBlocks = 0, _generation = -1, _passIndex = -1;
+
 self.onmessage = event => {
-  const { generation, passIndex, snapshot, step, cols, totalBlocks, startBlock, count } = event.data;
-  const actualCount = Math.min(count, totalBlocks - startBlock);
+  const d = event.data;
+
+  if (d.type === "init") {
+    _snap = d.snapshot;
+    _step = d.step;
+    _cols = d.cols;
+    _totalBlocks = d.totalBlocks;
+    _generation = d.generation;
+    _passIndex = d.passIndex;
+    return;
+  }
+
+  const { startBlock, count } = d;
+  const actualCount = Math.min(count, _totalBlocks - startBlock);
   const colors = new Uint8ClampedArray(actualCount * 4);
 
   for (let i = 0; i < actualCount; i++) {
     const blockIndex = startBlock + i;
-    const col = blockIndex % cols;
-    const row = Math.floor(blockIndex / cols);
-    const xStart = col * step;
-    const yStart = row * step;
-    const sampleX = Math.min(xStart + step * 0.5, snapshot.width - 0.5);
-    const sampleY = Math.min(yStart + step * 0.5, snapshot.height - 0.5);
-    const worldX = snapshot.x0 + sampleX * snapshot.scaleX;
-    const worldY = snapshot.y1 - sampleY * snapshot.scaleY;
+    const col = blockIndex % _cols;
+    const row = Math.floor(blockIndex / _cols);
+    const xStart = col * _step;
+    const yStart = row * _step;
+    const sampleX = Math.min(xStart + _step * 0.5, _snap.width - 0.5);
+    const sampleY = Math.min(yStart + _step * 0.5, _snap.height - 0.5);
+    const worldX = _snap.x0 + sampleX * _snap.scaleX;
+    const worldY = _snap.y1 - sampleY * _snap.scaleY;
     const color = cpuColor(
-      cpuEscape(snapshot.formula, worldX, worldY, snapshot.iter, snapshot.juliaC),
-      snapshot.iter,
-      snapshot.palette,
-      snapshot.cycle,
-      snapshot.colorMode
+      cpuEscape(_snap.formula, worldX, worldY, _snap.iter, _snap.juliaC),
+      _snap.iter,
+      _snap.palette,
+      _snap.cycle,
+      _snap.colorMode
     );
     const p = i * 4;
     colors[p] = color[0];
@@ -1054,7 +1068,7 @@ self.onmessage = event => {
     colors[p + 3] = 255;
   }
 
-  self.postMessage({ generation, passIndex, startBlock, colors }, [colors.buffer]);
+  self.postMessage({ generation: _generation, passIndex: _passIndex, startBlock, colors }, [colors.buffer]);
 };
 `;
 }
@@ -1435,7 +1449,7 @@ function startCpuRender() {
   cpuRender.lastPaint = 0;
   cpuRender.useWorkers = ensureCpuWorkers();
   setupCpuPass();
-  if (cpuRender.useWorkers) dispatchCpuWorkerBatches();
+  if (cpuRender.useWorkers) { initCpuWorkers(); dispatchCpuWorkerBatches(); }
   else requestAnimationFrame(() => processCpuRenderMain(generation));
 }
 
@@ -1513,38 +1527,32 @@ function paintCpuColorBatch(startBlock, colors) {
   }
 }
 
+function initCpuWorkers() {
+  const initMsg = {
+    type: "init",
+    generation: cpuRender.activeGeneration,
+    passIndex: cpuRender.passIndex,
+    snapshot: cpuRender.snapshot,
+    step: cpuRender.step,
+    cols: cpuRender.cols,
+    totalBlocks: cpuRender.totalBlocks,
+  };
+  for (const entry of cpuRender.workers) {
+    entry.worker.postMessage(initMsg);
+  }
+}
+
 function dispatchCpuWorkerBatches() {
   if (!cpuRender.running || cpuRender.dirty || !state.cpuRefine) return;
 
-  const freeWorkers = cpuRender.workers.filter(w => !w.busy);
-  const remaining = cpuRender.totalBlocks - cpuRender.nextBatchBlock;
-  if (freeWorkers.length === 0 || remaining <= 0) {
-    finishCpuWorkerPassIfDone();
-    return;
-  }
-
-  const batchSize = Math.max(
-    CPU_WORKER_BATCH_BLOCKS,
-    Math.ceil(remaining / freeWorkers.length)
-  );
-
-  for (const entry of freeWorkers) {
-    if (cpuRender.nextBatchBlock >= cpuRender.totalBlocks) break;
+  for (const entry of cpuRender.workers) {
+    if (entry.busy || cpuRender.nextBatchBlock >= cpuRender.totalBlocks) continue;
     const startBlock = cpuRender.nextBatchBlock;
-    const count = Math.min(batchSize, cpuRender.totalBlocks - startBlock);
+    const count = Math.min(CPU_WORKER_BATCH_BLOCKS, cpuRender.totalBlocks - startBlock);
     cpuRender.nextBatchBlock += count;
     cpuRender.pendingBatches++;
     entry.busy = true;
-    entry.worker.postMessage({
-      generation: cpuRender.activeGeneration,
-      passIndex: cpuRender.passIndex,
-      snapshot: cpuRender.snapshot,
-      step: cpuRender.step,
-      cols: cpuRender.cols,
-      totalBlocks: cpuRender.totalBlocks,
-      startBlock,
-      count,
-    });
+    entry.worker.postMessage({ startBlock, count });
   }
 
   finishCpuWorkerPassIfDone();
@@ -1562,7 +1570,7 @@ function onCpuWorkerMessage(entry, data) {
 
   paintCpuColorBatch(data.startBlock, data.colors);
   const now = performance.now();
-  if (now - cpuRender.lastPaint > 80 || cpuRender.pendingBatches === 0) {
+  if (now - cpuRender.lastPaint > 32 || cpuRender.pendingBatches === 0) {
     deepCtx.putImageData(cpuRender.imageData, 0, 0);
     cpuRender.lastPaint = now;
   }
@@ -1580,6 +1588,7 @@ function finishCpuWorkerPassIfDone() {
     return;
   }
   setupCpuPass();
+  initCpuWorkers();
   dispatchCpuWorkerBatches();
 }
 
