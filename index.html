@@ -31,7 +31,7 @@
             <strong id="fpsReadout">60</strong>
           </div>
           <div>
-            <span>Iter</span>
+            <span>Eff. Iter</span>
             <strong id="iterReadout">256</strong>
           </div>
           <div>
@@ -41,6 +41,10 @@
         </div>
 
         <div class="control-grid">
+          <label>
+            <span>Fractal</span>
+            <select id="fractalSelect" aria-label="Choose fractal"></select>
+          </label>
           <label>
             <span>Iterations</span>
             <input id="iterations" type="range" min="32" max="1024" step="8" value="256">
@@ -53,10 +57,19 @@
             <span>Parameter</span>
             <input id="juliaAngle" type="range" min="0" max="6.2832" step="0.01" value="0">
           </label>
+          <label id="fixedJuliaRow" style="display:none">
+            <span>Julia C</span>
+            <div class="julia-picker">
+              <input id="juliaReal" type="number" min="-1.5" max="1.5" step="0.001" aria-label="Julia real component">
+              <input id="juliaImag" type="number" min="-1.5" max="1.5" step="0.001" aria-label="Julia imaginary component">
+              <button id="btnRandomJulia" type="button" title="Randomize Julia seed">Rnd</button>
+            </div>
+          </label>
         </div>
 
         <div class="buttons" role="group" aria-label="Mode controls">
-          <button id="btnFractal" type="button" title="Switch fractal (F)">Fractal</button>
+          <button id="btnPrevFractal" type="button" title="Previous fractal (Shift+F)">&lt;</button>
+          <button id="btnNextFractal" type="button" title="Next fractal (F)">&gt;</button>
           <button id="btnPalette" type="button" title="Change palette (P)">Palette</button>
           <button id="btnRefine"  type="button" title="Toggle CPU refinement">Refine</button>
           <button id="btnReset"   type="button" title="Reset view (R)">Reset</button>
@@ -68,7 +81,7 @@
         <span>Drag to pan</span>
         <span>Scroll to zoom</span>
         <span>Pinch to zoom</span>
-        <span>F — switch fractal</span>
+        <span>F — next fractal</span>
         <span>P — palette</span>
         <span>R — reset</span>
         <span>C — share</span>

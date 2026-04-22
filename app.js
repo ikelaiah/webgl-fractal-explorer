@@ -238,18 +238,393 @@ void main() {
 }
 `;
 
+// -- Perpendicular Mandelbrot -------------------------------------------------
+const perpendicularMandelbrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, -2.0*abs(z.x)*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Celtic Heart -------------------------------------------------------------
+const celticHeartFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), -2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Perpendicular Buffalo ----------------------------------------------------
+const perpendicularBuffaloFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), -2.0*abs(z.x*z.y)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Douady Rabbit Julia ------------------------------------------------------
+const rabbitJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Quintic Multibrot ---------------------------------------------------------
+const quinticMultibrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    float x4 = x2 * x2;
+    float y4 = y2 * y2;
+    z = vec2(
+      z.x * (x4 - 10.0 * x2 * y2 + 5.0 * y4),
+      z.y * (5.0 * x4 - 10.0 * x2 * y2 + y4)
+    ) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Lambda Mandelbrot ---------------------------------------------------------
+const lambdaFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.5, 0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 oneMinusZ = vec2(1.0 - z.x, -z.y);
+    vec2 prod = vec2(
+      z.x * oneMinusZ.x - z.y * oneMinusZ.y,
+      z.x * oneMinusZ.y + z.y * oneMinusZ.x
+    );
+    z = vec2(c.x * prod.x - c.y * prod.y, c.x * prod.y + c.y * prod.x);
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Spider -------------------------------------------------------------------
+const spiderFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    c = c * 0.5 + z;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Burning Ship Julia --------------------------------------------------------
+const burningShipJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x), abs(z.y));
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Dendrite Julia ------------------------------------------------------------
+const dendriteJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- San Marco Dragon Julia ----------------------------------------------------
+const sanMarcoFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Tricorn Julia -------------------------------------------------------------
+const tricornJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, -2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Celtic Julia --------------------------------------------------------------
+const celticJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), 2.0*z.x*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Buffalo Julia -------------------------------------------------------------
+const buffaloJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(abs(z.x*z.x - z.y*z.y), -abs(2.0*z.x*z.y)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Perpendicular Julia -------------------------------------------------------
+const perpendicularJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, -2.0*abs(z.x)*z.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Cubic Julia ---------------------------------------------------------------
+const cubicJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    z = vec2(z.x * (x2 - 3.0 * y2), z.y * (3.0 * x2 - y2)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Cubic Burning Ship --------------------------------------------------------
+const burningShipCubicFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = abs(z);
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    z = vec2(z.x * (x2 - 3.0 * y2), z.y * (3.0 * x2 - y2)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Octic Multibrot -----------------------------------------------------------
+const octicMultibrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float r = length(z);
+    float a = atan(z.y, z.x) * 8.0;
+    float rp = pow(r, 8.0);
+    z = vec2(cos(a), sin(a)) * rp + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Sine Mandelbrot -----------------------------------------------------------
+const sineMandelbrotFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float yy = clamp(z.y, -8.0, 8.0);
+    float ey = exp(yy);
+    float eny = exp(-yy);
+    float ch = 0.5 * (ey + eny);
+    float sh = 0.5 * (ey - eny);
+    z = vec2(sin(z.x) * ch, cos(z.x) * sh) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Mandelbox ----------------------------------------------------------------
+const mandelboxFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = c;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = clamp(z, -1.0, 1.0) * 2.0 - z;
+    float r2 = dot(z, z);
+    if (r2 < 0.25) z *= 4.0;
+    else if (r2 < 1.0) z /= r2;
+    z = 2.0 * z + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
-  { name: "Mandelbrot Set",      src: mandelbrotFrag,       center: [-0.5, 0.0], scale: 3.5, julia: false },
-  { name: "Julia Set",           src: juliaFrag,            center: [0.0,  0.0], scale: 3.5, julia: true  },
-  { name: "Burning Ship",        src: burningShipFrag,      center: [-0.5,-0.5], scale: 3.5, julia: false },
-  { name: "Tricorn (Mandelbar)", src: tricornFrag,          center: [0.0,  0.0], scale: 3.5, julia: false },
-  { name: "Cubic Multibrot",     src: cubicMultibrotFrag,   center: [0.0,  0.0], scale: 3.0, julia: false },
-  { name: "Quartic Multibrot",   src: quarticMultibrotFrag, center: [0.0,  0.0], scale: 3.0, julia: false },
-  { name: "Celtic Mandelbrot",   src: celticFrag,           center: [-0.2, 0.0], scale: 3.2, julia: false },
-  { name: "Buffalo",             src: buffaloFrag,          center: [-0.2, 0.0], scale: 3.2, julia: false },
-  { name: "Phoenix Julia",       src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true  },
+  { name: "Mandelbrot Set",      category: "Classic",       src: mandelbrotFrag,       center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "mandelbrot" },
+  { name: "Julia Set",           category: "Julia",         src: juliaFrag,            center: [0.0,  0.0], scale: 3.5, julia: true,  formula: "julia" },
+  { name: "Burning Ship",        category: "Classic",       src: burningShipFrag,      center: [-0.5,-0.5], scale: 3.5, julia: false, formula: "burningShip" },
+  { name: "Tricorn (Mandelbar)", category: "Classic",       src: tricornFrag,          center: [0.0,  0.0], scale: 3.5, julia: false, formula: "tricorn" },
+  { name: "Cubic Multibrot",     category: "Power",         src: cubicMultibrotFrag,   center: [0.0,  0.0], scale: 3.0, julia: false, formula: "cubic" },
+  { name: "Quartic Multibrot",   category: "Power",         src: quarticMultibrotFrag, center: [0.0,  0.0], scale: 3.0, julia: false, formula: "quartic" },
+  { name: "Celtic Mandelbrot",   category: "Folded",        src: celticFrag,           center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celtic" },
+  { name: "Buffalo",             category: "Folded",        src: buffaloFrag,          center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "buffalo" },
+  { name: "Phoenix Julia",       category: "Julia",         src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true,  formula: "phoenix" },
+  { name: "Perpendicular Mandelbrot", category: "Perpendicular", src: perpendicularMandelbrotFrag, center: [0.0, 0.0], scale: 3.5, julia: false, formula: "perpendicularMandelbrot" },
+  { name: "Celtic Heart",        category: "Folded",        src: celticHeartFrag,      center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celticHeart" },
+  { name: "Perpendicular Buffalo", category: "Perpendicular", src: perpendicularBuffaloFrag, center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "perpendicularBuffalo" },
+  { name: "Douady Rabbit Julia", category: "Julia",         src: rabbitJuliaFrag,      center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.123, 0.745], formula: "julia" },
+  { name: "Quintic Multibrot",   category: "Power",         src: quinticMultibrotFrag, center: [0.0,  0.0], scale: 2.6, julia: false, formula: "quintic" },
+  { name: "Lambda Mandelbrot",   category: "Dynamic",       src: lambdaFrag,           center: [0.5,  0.0], scale: 4.0, julia: false, formula: "lambda" },
+  { name: "Spider",              category: "Dynamic",       src: spiderFrag,           center: [0.0,  0.0], scale: 4.0, julia: false, formula: "spider" },
+  { name: "Burning Ship Julia - Rift", category: "Julia",   src: burningShipJuliaFrag, center: [0.0,  0.0], scale: 2.2, julia: false, juliaParam: [-0.03, -1.052], formula: "burningJulia" },
+  { name: "Burning Ship Julia - Ember", category: "Julia",  src: burningShipJuliaFrag, center: [0.0,  0.0], scale: 2.4, julia: false, juliaParam: [-0.3, -0.95], formula: "burningJulia" },
+  { name: "Burning Ship Julia - Wake", category: "Julia",   src: burningShipJuliaFrag, center: [0.0,  0.0], scale: 2.2, julia: false, juliaParam: [0.096, -1.156], formula: "burningJulia" },
+  { name: "Dendrite Julia",      category: "Julia",         src: dendriteJuliaFrag,    center: [0.0,  0.0], scale: 3.2, julia: false, juliaParam: [0.0, 1.0], formula: "julia" },
+  { name: "San Marco Dragon Julia", category: "Julia",      src: sanMarcoFrag,         center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.75, 0.1], formula: "julia" },
+  { name: "Tricorn Julia",       category: "Julia",         src: tricornJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.36, 0.62], formula: "tricornJulia" },
+  { name: "Celtic Julia",        category: "Julia",         src: celticJuliaFrag,      center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.18, 0.67], formula: "celticJulia" },
+  { name: "Buffalo Julia",       category: "Julia",         src: buffaloJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.45, -0.55], formula: "buffaloJulia" },
+  { name: "Perpendicular Julia", category: "Julia",         src: perpendicularJuliaFrag, center: [0.0, 0.0], scale: 3.0, julia: false, juliaParam: [0.22, -0.54], formula: "perpendicularJulia" },
+  { name: "Cubic Julia",         category: "Julia",         src: cubicJuliaFrag,       center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [-0.1, 0.76], formula: "cubicJulia" },
+  { name: "Cubic Burning Ship",  category: "Folded",        src: burningShipCubicFrag, center: [0.0, -0.2], scale: 3.2, julia: false, formula: "burningCubic" },
+  { name: "Octic Multibrot",     category: "Power",         src: octicMultibrotFrag,   center: [0.0,  0.0], scale: 2.4, julia: false, formula: "octic" },
+  { name: "Sine Mandelbrot",     category: "Transcendental", src: sineMandelbrotFrag,  center: [0.0,  0.0], scale: 6.0, julia: false, formula: "sine" },
+  { name: "Mandelbox",           category: "Box Fold",      src: mandelboxFrag,        center: [0.0,  0.0], scale: 4.0, julia: false, formula: "mandelbox" },
 ];
 
 // ─── WebGL helpers ────────────────────────────────────────────────────────────
@@ -311,16 +686,39 @@ const ui = {
   fpsReadout:  document.getElementById("fpsReadout"),
   iterReadout: document.getElementById("iterReadout"),
   modeReadout: document.getElementById("modeReadout"),
+  fractalSelect: document.getElementById("fractalSelect"),
   iterations:  document.getElementById("iterations"),
   colorCycle:  document.getElementById("colorCycle"),
   juliaRow:    document.getElementById("juliaRow"),
   juliaAngle:  document.getElementById("juliaAngle"),
-  btnFractal:  document.getElementById("btnFractal"),
+  fixedJuliaRow: document.getElementById("fixedJuliaRow"),
+  juliaReal:   document.getElementById("juliaReal"),
+  juliaImag:   document.getElementById("juliaImag"),
+  btnRandomJulia: document.getElementById("btnRandomJulia"),
+  btnPrevFractal: document.getElementById("btnPrevFractal"),
+  btnNextFractal: document.getElementById("btnNextFractal"),
   btnPalette:  document.getElementById("btnPalette"),
   btnRefine:   document.getElementById("btnRefine"),
   btnReset:    document.getElementById("btnReset"),
   btnShare:    document.getElementById("btnShare"),
 };
+
+const fractalOptionGroups = new Map();
+FRACTALS.forEach((fractal, idx) => {
+  let group = fractalOptionGroups.get(fractal.category);
+  if (!group) {
+    group = document.createElement("optgroup");
+    group.label = `--- ${fractal.category.toUpperCase()} ---`;
+    fractalOptionGroups.set(fractal.category, group);
+    ui.fractalSelect.appendChild(group);
+  }
+  const option = document.createElement("option");
+  option.value = String(idx);
+  option.textContent = fractal.name;
+  group.appendChild(option);
+});
+const fractalNavOrder = Array.from(fractalOptionGroups.values())
+  .flatMap(group => Array.from(group.children, option => parseInt(option.value, 10)));
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -329,6 +727,7 @@ const MIN_ITER = 32;
 const MAX_ITER = 1024;
 const DEFAULT_ITER = 256;
 const CAMERA_EASE = 12;
+const CAMERA_SETTLE_EPS = 32 * Number.EPSILON;
 const MINIMAP_ITER = 56;
 const CPU_DPR = 1;
 const CPU_FRAME_BUDGET_MS = 10;
@@ -336,7 +735,7 @@ const CPU_REFINE_DELAY_MS = 180;
 const CPU_PASSES = [8, 4, 2, 1];
 const CPU_MAX_WORKERS = 8;
 const CPU_WORKER_COUNT_OVERRIDE = 8;
-const CPU_WORKER_BATCH_BLOCKS = 4096;
+const CPU_WORKER_BATCH_BLOCKS = 2048;
 
 const state = {
   fractalIdx: 0,
@@ -354,6 +753,7 @@ const state = {
   fpsFrames: 0,
   fpsTime: performance.now(),
   lastTime: performance.now(),
+  juliaParams: {},
 };
 
 const activePointers = new Map();
@@ -422,6 +822,11 @@ function syncTargetToCurrent() {
   setCameraTarget(state.centerX, state.centerY, state.pixelScale, true);
 }
 
+function cameraSettleTolerance(center, target, viewWidth) {
+  const numericFloor = Math.max(1, Math.abs(center), Math.abs(target)) * CAMERA_SETTLE_EPS;
+  return Math.max(viewWidth * 1e-7, numericFloor);
+}
+
 function nudgeCamera(dt) {
   if (!state.targetPixelScale) return;
   if (!state.pixelScale) {
@@ -438,8 +843,10 @@ function nudgeCamera(dt) {
   state.pixelScale = Math.exp(currentLog + (targetLog - currentLog) * alpha);
 
   const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
-  if (Math.abs(state.targetCenterX - state.centerX) < viewWidth * 1e-7 &&
-      Math.abs(state.targetCenterY - state.centerY) < viewWidth * 1e-7 &&
+  const xTolerance = cameraSettleTolerance(state.centerX, state.targetCenterX, viewWidth);
+  const yTolerance = cameraSettleTolerance(state.centerY, state.targetCenterY, viewWidth);
+  if (Math.abs(state.targetCenterX - state.centerX) < xTolerance &&
+      Math.abs(state.targetCenterY - state.centerY) < yTolerance &&
       Math.abs(Math.log(state.pixelScale / state.targetPixelScale)) < 1e-5) {
     syncTargetToCurrent();
   }
@@ -459,6 +866,7 @@ function saveSettings() {
       colorCycle: ui.colorCycle.value,
       juliaAngle: ui.juliaAngle.value,
       cpuRefine: state.cpuRefine,
+      juliaParams: state.juliaParams,
     }));
   } catch { /* quota */ }
 }
@@ -472,6 +880,7 @@ function loadSettings() {
     if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
     if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
     if (s.cpuRefine !== undefined) state.cpuRefine = !!s.cpuRefine;
+    if (s.juliaParams && typeof s.juliaParams === "object") state.juliaParams = s.juliaParams;
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     const v = views[state.fractalIdx];
     if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
@@ -500,7 +909,7 @@ function restoreViewForFractal(idx) {
 // ─── URL share ────────────────────────────────────────────────────────────────
 
 function stateToParams() {
-  return new URLSearchParams({
+  const params = new URLSearchParams({
     f:  state.fractalIdx,
     pa: state.palette,
     cx: state.targetCenterX.toFixed(15),
@@ -509,7 +918,13 @@ function stateToParams() {
     it: ui.iterations.value,
     cc: ui.colorCycle.value,
     ja: ui.juliaAngle.value,
-  }).toString();
+  });
+  if (FRACTALS[state.fractalIdx].juliaParam) {
+    const [jr, ji] = getRenderJuliaC();
+    params.set("jr", jr.toFixed(6));
+    params.set("ji", ji.toFixed(6));
+  }
+  return params.toString();
 }
 
 function loadFromParams() {
@@ -522,6 +937,13 @@ function loadFromParams() {
   if (p.has("it")) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(p.get("it"), 10) || DEFAULT_ITER, MAX_ITER));
   if (p.has("cc")) ui.colorCycle.value = p.get("cc");
   if (p.has("ja")) ui.juliaAngle.value = p.get("ja");
+  if (p.has("jr") && p.has("ji") && FRACTALS[state.fractalIdx].juliaParam) {
+    const jr = parseFloat(p.get("jr"));
+    const ji = parseFloat(p.get("ji"));
+    if (Number.isFinite(jr) && Number.isFinite(ji)) {
+      state.juliaParams[state.fractalIdx] = [clampJuliaParam(jr), clampJuliaParam(ji)];
+    }
+  }
   syncTargetToCurrent();
   markMinimapDirty();
 }
@@ -553,21 +975,57 @@ function juliaC() {
   return [0.7885 * Math.cos(a), 0.7885 * Math.sin(a)];
 }
 
+function clampJuliaParam(value) {
+  return Math.max(-1.5, Math.min(1.5, value));
+}
+
+function fixedJuliaParam(idx = state.fractalIdx) {
+  const saved = state.juliaParams[idx];
+  const base = FRACTALS[idx].juliaParam || [0, 0];
+  if (Array.isArray(saved) && saved.length >= 2) {
+    const real = parseFloat(saved[0]);
+    const imag = parseFloat(saved[1]);
+    if (Number.isFinite(real) && Number.isFinite(imag)) {
+      return [clampJuliaParam(real), clampJuliaParam(imag)];
+    }
+  }
+  return [base[0], base[1]];
+}
+
+function getRenderJuliaC(idx = state.fractalIdx) {
+  if (FRACTALS[idx].juliaParam) return fixedJuliaParam(idx);
+  return juliaC();
+}
+
+function syncJuliaParamInputs() {
+  const f = FRACTALS[state.fractalIdx];
+  if (!f.juliaParam || document.activeElement === ui.juliaReal || document.activeElement === ui.juliaImag) return;
+  const [real, imag] = fixedJuliaParam();
+  ui.juliaReal.value = real.toFixed(3);
+  ui.juliaImag.value = imag.toFixed(3);
+}
+
 // ─── Sync UI ──────────────────────────────────────────────────────────────────
 
 function updateUI() {
   const f = FRACTALS[state.fractalIdx];
   ui.fractalName.textContent = f.name;
+  ui.fractalSelect.value = String(state.fractalIdx);
   ui.juliaRow.style.display  = f.julia ? "" : "none";
+  ui.fixedJuliaRow.style.display = f.juliaParam ? "" : "none";
+  syncJuliaParamInputs();
   ui.iterReadout.textContent = getRenderIterations();
   ui.modeReadout.textContent = getRenderModeLabel();
   ui.btnRefine.classList.toggle("active", state.cpuRefine);
-  const zoom = FRACTALS[state.fractalIdx].scale / (state.pixelScale * Math.max(canvas.width, 1));
-  ui.zoomReadout.textContent = zoom >= 1e6
-    ? (zoom / 1e6).toFixed(2) + "M×"
-    : zoom >= 1000
-    ? (zoom / 1000).toFixed(1) + "k×"
-    : zoom.toFixed(zoom < 10 ? 2 : 0) + "×";
+  ui.zoomReadout.textContent = formatZoom(getZoom());
+}
+
+function formatZoom(zoom) {
+  if (!Number.isFinite(zoom) || zoom <= 0) return "1×";
+  if (zoom >= 1e9) return zoom.toExponential(2).replace("+", "") + "×";
+  if (zoom >= 1e6) return (zoom / 1e6).toFixed(2) + "M×";
+  if (zoom >= 1000) return (zoom / 1000).toFixed(1) + "k×";
+  return zoom.toFixed(zoom < 10 ? 2 : 0) + "×";
 }
 
 function getRenderModeLabel() {
@@ -624,13 +1082,24 @@ function cosinePalette(t, paletteIdx) {
 }
 
 function previewEscape(fractalIdx, x, y) {
-  const jc = juliaC();
+  const formula = FRACTALS[fractalIdx].formula || "mandelbrot";
+  const jc = getRenderJuliaC(fractalIdx);
   let zx = 0, zy = 0, cx = x, cy = y, px = 0, py = 0;
 
-  if (fractalIdx === 1) {
+  if (formula === "julia" ||
+      formula === "burningJulia" ||
+      formula === "tricornJulia" ||
+      formula === "celticJulia" ||
+      formula === "buffaloJulia" ||
+      formula === "perpendicularJulia" ||
+      formula === "cubicJulia") {
     zx = x; zy = y; cx = jc[0]; cy = jc[1];
-  } else if (fractalIdx === 8) {
+  } else if (formula === "phoenix") {
     zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  } else if (formula === "lambda") {
+    zx = 0.5; zy = 0; cx = x; cy = y;
+  } else if (formula === "mandelbox") {
+    zx = x; zy = y;
   }
 
   for (let n = 0; n < MINIMAP_ITER; n++) {
@@ -639,37 +1108,89 @@ function previewEscape(fractalIdx, x, y) {
     const y2 = zy * zy;
     const xy = zx * zy;
 
-    if (fractalIdx === 2) {
+    if (formula === "burningShip" || formula === "burningJulia") {
       const ax = Math.abs(zx), ay = Math.abs(zy);
       nx = ax * ax - ay * ay + cx;
       ny = 2 * ax * ay + cy;
-    } else if (fractalIdx === 3) {
+    } else if (formula === "tricorn" || formula === "tricornJulia") {
       nx = x2 - y2 + cx;
       ny = -2 * xy + cy;
-    } else if (fractalIdx === 4) {
+    } else if (formula === "cubic" || formula === "cubicJulia") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = zy * (3 * x2 - y2) + cy;
-    } else if (fractalIdx === 5) {
+    } else if (formula === "quartic") {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
       ny = 2 * qx * qy + cy;
-    } else if (fractalIdx === 6) {
+    } else if (formula === "celtic" || formula === "celticJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = 2 * xy + cy;
-    } else if (fractalIdx === 7) {
+    } else if (formula === "buffalo" || formula === "buffaloJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = -Math.abs(2 * xy) + cy;
-    } else if (fractalIdx === 8) {
+    } else if (formula === "phoenix") {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
       px = zx; py = zy;
+    } else if (formula === "perpendicularMandelbrot" || formula === "perpendicularJulia") {
+      nx = x2 - y2 + cx;
+      ny = -2 * Math.abs(zx) * zy + cy;
+    } else if (formula === "celticHeart") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * xy + cy;
+    } else if (formula === "perpendicularBuffalo") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * Math.abs(xy) + cy;
+    } else if (formula === "quintic") {
+      const x4 = x2 * x2;
+      const y4 = y2 * y2;
+      nx = zx * (x4 - 10 * x2 * y2 + 5 * y4) + cx;
+      ny = zy * (5 * x4 - 10 * x2 * y2 + y4) + cy;
+    } else if (formula === "lambda") {
+      const pr = zx * (1 - zx) + y2;
+      const pi = zy * (1 - 2 * zx);
+      nx = cx * pr - cy * pi;
+      ny = cx * pi + cy * pr;
+    } else if (formula === "spider") {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+      cx = cx * 0.5 + nx;
+      cy = cy * 0.5 + ny;
+    } else if (formula === "burningCubic") {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      const ax2 = ax * ax;
+      const ay2 = ay * ay;
+      nx = ax * (ax2 - 3 * ay2) + cx;
+      ny = ay * (3 * ax2 - ay2) + cy;
+    } else if (formula === "octic") {
+      const r = Math.hypot(zx, zy);
+      const a = Math.atan2(zy, zx) * 8;
+      const rp = Math.pow(r, 8);
+      nx = Math.cos(a) * rp + cx;
+      ny = Math.sin(a) * rp + cy;
+    } else if (formula === "sine") {
+      const yy = Math.max(-8, Math.min(8, zy));
+      nx = Math.sin(zx) * Math.cosh(yy) + cx;
+      ny = Math.cos(zx) * Math.sinh(yy) + cy;
+    } else if (formula === "mandelbox") {
+      let bx = Math.max(-1, Math.min(1, zx)) * 2 - zx;
+      let by = Math.max(-1, Math.min(1, zy)) * 2 - zy;
+      const r2 = bx * bx + by * by;
+      if (r2 < 0.25) {
+        bx *= 4; by *= 4;
+      } else if (r2 < 1) {
+        bx /= r2; by /= r2;
+      }
+      nx = 2 * bx + cx;
+      ny = 2 * by + cy;
     } else {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
     }
 
     zx = nx; zy = ny;
+    if (!Number.isFinite(zx) || !Number.isFinite(zy)) return n;
     if (zx * zx + zy * zy > 256) return n;
   }
   return MINIMAP_ITER;
@@ -777,8 +1298,10 @@ function markDeepDirty(clear = false) {
 function isCameraSettled() {
   if (!state.pixelScale || !state.targetPixelScale) return false;
   const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
-  return Math.abs(state.targetCenterX - state.centerX) < viewWidth * 1e-7 &&
-    Math.abs(state.targetCenterY - state.centerY) < viewWidth * 1e-7 &&
+  const xTolerance = cameraSettleTolerance(state.centerX, state.targetCenterX, viewWidth);
+  const yTolerance = cameraSettleTolerance(state.centerY, state.targetCenterY, viewWidth);
+  return Math.abs(state.targetCenterX - state.centerX) < xTolerance &&
+    Math.abs(state.targetCenterY - state.centerY) < yTolerance &&
     Math.abs(Math.log(state.pixelScale / state.targetPixelScale)) < 1e-5;
 }
 
@@ -799,13 +1322,23 @@ function cpuWorkerSource() {
   return `
 const TAU = Math.PI * 2;
 
-function cpuEscape(fractalIdx, x, y, maxIter, jc) {
+function cpuEscape(formula, x, y, maxIter, jc) {
   let zx = 0, zy = 0, cx = x, cy = y, px = 0;
 
-  if (fractalIdx === 1) {
+  if (formula === "julia" ||
+      formula === "burningJulia" ||
+      formula === "tricornJulia" ||
+      formula === "celticJulia" ||
+      formula === "buffaloJulia" ||
+      formula === "perpendicularJulia" ||
+      formula === "cubicJulia") {
     zx = x; zy = y; cx = jc[0]; cy = jc[1];
-  } else if (fractalIdx === 8) {
+  } else if (formula === "phoenix") {
     zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  } else if (formula === "lambda") {
+    zx = 0.5; zy = 0; cx = x; cy = y;
+  } else if (formula === "mandelbox") {
+    zx = x; zy = y;
   }
 
   for (let n = 0; n < maxIter; n++) {
@@ -814,31 +1347,82 @@ function cpuEscape(fractalIdx, x, y, maxIter, jc) {
     const y2 = zy * zy;
     const xy = zx * zy;
 
-    if (fractalIdx === 2) {
+    if (formula === "burningShip" || formula === "burningJulia") {
       const ax = Math.abs(zx), ay = Math.abs(zy);
       nx = ax * ax - ay * ay + cx;
       ny = 2 * ax * ay + cy;
-    } else if (fractalIdx === 3) {
+    } else if (formula === "tricorn" || formula === "tricornJulia") {
       nx = x2 - y2 + cx;
       ny = -2 * xy + cy;
-    } else if (fractalIdx === 4) {
+    } else if (formula === "cubic" || formula === "cubicJulia") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = zy * (3 * x2 - y2) + cy;
-    } else if (fractalIdx === 5) {
+    } else if (formula === "quartic") {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
       ny = 2 * qx * qy + cy;
-    } else if (fractalIdx === 6) {
+    } else if (formula === "celtic" || formula === "celticJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = 2 * xy + cy;
-    } else if (fractalIdx === 7) {
+    } else if (formula === "buffalo" || formula === "buffaloJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = -Math.abs(2 * xy) + cy;
-    } else if (fractalIdx === 8) {
+    } else if (formula === "phoenix") {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
       px = zx;
+    } else if (formula === "perpendicularMandelbrot" || formula === "perpendicularJulia") {
+      nx = x2 - y2 + cx;
+      ny = -2 * Math.abs(zx) * zy + cy;
+    } else if (formula === "celticHeart") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * xy + cy;
+    } else if (formula === "perpendicularBuffalo") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * Math.abs(xy) + cy;
+    } else if (formula === "quintic") {
+      const x4 = x2 * x2;
+      const y4 = y2 * y2;
+      nx = zx * (x4 - 10 * x2 * y2 + 5 * y4) + cx;
+      ny = zy * (5 * x4 - 10 * x2 * y2 + y4) + cy;
+    } else if (formula === "lambda") {
+      const pr = zx * (1 - zx) + y2;
+      const pi = zy * (1 - 2 * zx);
+      nx = cx * pr - cy * pi;
+      ny = cx * pi + cy * pr;
+    } else if (formula === "spider") {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+      cx = cx * 0.5 + nx;
+      cy = cy * 0.5 + ny;
+    } else if (formula === "burningCubic") {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      const ax2 = ax * ax;
+      const ay2 = ay * ay;
+      nx = ax * (ax2 - 3 * ay2) + cx;
+      ny = ay * (3 * ax2 - ay2) + cy;
+    } else if (formula === "octic") {
+      const r = Math.hypot(zx, zy);
+      const a = Math.atan2(zy, zx) * 8;
+      const rp = Math.pow(r, 8);
+      nx = Math.cos(a) * rp + cx;
+      ny = Math.sin(a) * rp + cy;
+    } else if (formula === "sine") {
+      const yy = Math.max(-8, Math.min(8, zy));
+      nx = Math.sin(zx) * Math.cosh(yy) + cx;
+      ny = Math.cos(zx) * Math.sinh(yy) + cy;
+    } else if (formula === "mandelbox") {
+      let bx = Math.max(-1, Math.min(1, zx)) * 2 - zx;
+      let by = Math.max(-1, Math.min(1, zy)) * 2 - zy;
+      const r2 = bx * bx + by * by;
+      if (r2 < 0.25) {
+        bx *= 4; by *= 4;
+      } else if (r2 < 1) {
+        bx /= r2; by /= r2;
+      }
+      nx = 2 * bx + cx;
+      ny = 2 * by + cy;
     } else {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
@@ -846,6 +1430,7 @@ function cpuEscape(fractalIdx, x, y, maxIter, jc) {
 
     zx = nx; zy = ny;
     const mag2 = zx * zx + zy * zy;
+    if (!Number.isFinite(mag2)) return { iter: n + 1, mag2: 1e9 };
     if (mag2 > 256) return { iter: n + 1, mag2 };
   }
 
@@ -882,7 +1467,7 @@ self.onmessage = event => {
     const worldX = snapshot.x0 + sampleX * snapshot.scale;
     const worldY = snapshot.y1 - sampleY * snapshot.scale;
     const color = cpuColor(
-      cpuEscape(snapshot.fractalIdx, worldX, worldY, snapshot.iter, snapshot.juliaC),
+      cpuEscape(snapshot.formula, worldX, worldY, snapshot.iter, snapshot.juliaC),
       snapshot.iter,
       snapshot.palette,
       snapshot.cycle
@@ -929,13 +1514,23 @@ function ensureCpuWorkers() {
   }
 }
 
-function cpuEscape(fractalIdx, x, y, maxIter, jc) {
+function cpuEscape(formula, x, y, maxIter, jc) {
   let zx = 0, zy = 0, cx = x, cy = y, px = 0;
 
-  if (fractalIdx === 1) {
+  if (formula === "julia" ||
+      formula === "burningJulia" ||
+      formula === "tricornJulia" ||
+      formula === "celticJulia" ||
+      formula === "buffaloJulia" ||
+      formula === "perpendicularJulia" ||
+      formula === "cubicJulia") {
     zx = x; zy = y; cx = jc[0]; cy = jc[1];
-  } else if (fractalIdx === 8) {
+  } else if (formula === "phoenix") {
     zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  } else if (formula === "lambda") {
+    zx = 0.5; zy = 0; cx = x; cy = y;
+  } else if (formula === "mandelbox") {
+    zx = x; zy = y;
   }
 
   for (let n = 0; n < maxIter; n++) {
@@ -944,31 +1539,82 @@ function cpuEscape(fractalIdx, x, y, maxIter, jc) {
     const y2 = zy * zy;
     const xy = zx * zy;
 
-    if (fractalIdx === 2) {
+    if (formula === "burningShip" || formula === "burningJulia") {
       const ax = Math.abs(zx), ay = Math.abs(zy);
       nx = ax * ax - ay * ay + cx;
       ny = 2 * ax * ay + cy;
-    } else if (fractalIdx === 3) {
+    } else if (formula === "tricorn" || formula === "tricornJulia") {
       nx = x2 - y2 + cx;
       ny = -2 * xy + cy;
-    } else if (fractalIdx === 4) {
+    } else if (formula === "cubic" || formula === "cubicJulia") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = zy * (3 * x2 - y2) + cy;
-    } else if (fractalIdx === 5) {
+    } else if (formula === "quartic") {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
       ny = 2 * qx * qy + cy;
-    } else if (fractalIdx === 6) {
+    } else if (formula === "celtic" || formula === "celticJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = 2 * xy + cy;
-    } else if (fractalIdx === 7) {
+    } else if (formula === "buffalo" || formula === "buffaloJulia") {
       nx = Math.abs(x2 - y2) + cx;
       ny = -Math.abs(2 * xy) + cy;
-    } else if (fractalIdx === 8) {
+    } else if (formula === "phoenix") {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
       px = zx;
+    } else if (formula === "perpendicularMandelbrot" || formula === "perpendicularJulia") {
+      nx = x2 - y2 + cx;
+      ny = -2 * Math.abs(zx) * zy + cy;
+    } else if (formula === "celticHeart") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * xy + cy;
+    } else if (formula === "perpendicularBuffalo") {
+      nx = Math.abs(x2 - y2) + cx;
+      ny = -2 * Math.abs(xy) + cy;
+    } else if (formula === "quintic") {
+      const x4 = x2 * x2;
+      const y4 = y2 * y2;
+      nx = zx * (x4 - 10 * x2 * y2 + 5 * y4) + cx;
+      ny = zy * (5 * x4 - 10 * x2 * y2 + y4) + cy;
+    } else if (formula === "lambda") {
+      const pr = zx * (1 - zx) + y2;
+      const pi = zy * (1 - 2 * zx);
+      nx = cx * pr - cy * pi;
+      ny = cx * pi + cy * pr;
+    } else if (formula === "spider") {
+      nx = x2 - y2 + cx;
+      ny = 2 * xy + cy;
+      cx = cx * 0.5 + nx;
+      cy = cy * 0.5 + ny;
+    } else if (formula === "burningCubic") {
+      const ax = Math.abs(zx), ay = Math.abs(zy);
+      const ax2 = ax * ax;
+      const ay2 = ay * ay;
+      nx = ax * (ax2 - 3 * ay2) + cx;
+      ny = ay * (3 * ax2 - ay2) + cy;
+    } else if (formula === "octic") {
+      const r = Math.hypot(zx, zy);
+      const a = Math.atan2(zy, zx) * 8;
+      const rp = Math.pow(r, 8);
+      nx = Math.cos(a) * rp + cx;
+      ny = Math.sin(a) * rp + cy;
+    } else if (formula === "sine") {
+      const yy = Math.max(-8, Math.min(8, zy));
+      nx = Math.sin(zx) * Math.cosh(yy) + cx;
+      ny = Math.cos(zx) * Math.sinh(yy) + cy;
+    } else if (formula === "mandelbox") {
+      let bx = Math.max(-1, Math.min(1, zx)) * 2 - zx;
+      let by = Math.max(-1, Math.min(1, zy)) * 2 - zy;
+      const r2 = bx * bx + by * by;
+      if (r2 < 0.25) {
+        bx *= 4; by *= 4;
+      } else if (r2 < 1) {
+        bx /= r2; by /= r2;
+      }
+      nx = 2 * bx + cx;
+      ny = 2 * by + cy;
     } else {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
@@ -976,6 +1622,7 @@ function cpuEscape(fractalIdx, x, y, maxIter, jc) {
 
     zx = nx; zy = ny;
     const mag2 = zx * zx + zy * zy;
+    if (!Number.isFinite(mag2)) return { iter: n + 1, zx, zy, mag2: 1e9 };
     if (mag2 > 256) return { iter: n + 1, zx, zy, mag2 };
   }
 
@@ -1002,6 +1649,7 @@ function makeCpuSnapshot() {
   const scale = worldWidth / Math.max(deepCanvas.width, 1);
   return {
     fractalIdx: state.fractalIdx,
+    formula: FRACTALS[state.fractalIdx].formula || "mandelbrot",
     palette: state.palette,
     cycle: parseFloat(ui.colorCycle.value) || 0,
     iter: getRenderIterations(),
@@ -1010,7 +1658,7 @@ function makeCpuSnapshot() {
     x0: state.centerX - worldWidth * 0.5,
     y1: state.centerY + worldHeight * 0.5,
     scale,
-    juliaC: juliaC(),
+    juliaC: getRenderJuliaC(),
   };
 }
 
@@ -1057,7 +1705,7 @@ function paintCpuBlock(blockIndex) {
   const worldX = snap.x0 + sampleX * snap.scale;
   const worldY = snap.y1 - sampleY * snap.scale;
   const color = cpuColor(
-    cpuEscape(snap.fractalIdx, worldX, worldY, snap.iter, snap.juliaC),
+    cpuEscape(snap.formula, worldX, worldY, snap.iter, snap.juliaC),
     snap.iter,
     snap.palette,
     snap.cycle
@@ -1078,6 +1726,11 @@ function paintCpuColorBatch(startBlock, colors) {
   const snap = cpuRender.snapshot;
   const step = cpuRender.step;
   const count = colors.length / 4;
+
+  if (step === 1) {
+    cpuRender.pixels.set(colors, startBlock * 4);
+    return;
+  }
 
   for (let i = 0; i < count; i++) {
     const blockIndex = startBlock + i;
@@ -1270,9 +1923,17 @@ function updatePinch() {
   anchorTargetAtClient(mid.x, mid.y, gesture.pinchAnchorX, gesture.pinchAnchorY, nextScale);
 }
 
-function switchFractal() {
+function switchFractal(direction = 1) {
+  const currentNavIdx = fractalNavOrder.indexOf(state.fractalIdx);
+  const navIdx = currentNavIdx >= 0 ? currentNavIdx : 0;
+  const nextNavIdx = (navIdx + direction + fractalNavOrder.length) % fractalNavOrder.length;
+  selectFractal(fractalNavOrder[nextNavIdx]);
+}
+
+function selectFractal(idx) {
+  if (idx === state.fractalIdx) return;
   saveViewForCurrentFractal();
-  state.fractalIdx = (state.fractalIdx + 1) % FRACTALS.length;
+  state.fractalIdx = idx;
   restoreViewForFractal(state.fractalIdx);
   markDeepDirty(true);
   saveSettings();
@@ -1283,6 +1944,42 @@ function toggleRefine() {
   markDeepDirty(true);
   if (!state.cpuRefine && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
   saveSettings();
+}
+
+function setFixedJuliaParam(real, imag, syncInputs = true) {
+  if (!FRACTALS[state.fractalIdx].juliaParam) return;
+  const next = [clampJuliaParam(real), clampJuliaParam(imag)];
+  state.juliaParams[state.fractalIdx] = next;
+  if (syncInputs) {
+    ui.juliaReal.value = next[0].toFixed(3);
+    ui.juliaImag.value = next[1].toFixed(3);
+  }
+  markMinimapDirty();
+  markDeepDirty(true);
+  saveSettings();
+}
+
+function updateFixedJuliaParamFromInputs() {
+  const real = parseFloat(ui.juliaReal.value);
+  const imag = parseFloat(ui.juliaImag.value);
+  if (!Number.isFinite(real) || !Number.isFinite(imag)) return;
+  setFixedJuliaParam(real, imag, false);
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function randomizeJuliaSeed() {
+  const f = FRACTALS[state.fractalIdx];
+  if (!f.juliaParam) return;
+  const real = f.formula === "burningJulia"
+    ? randomBetween(-0.95, 0.25)
+    : randomBetween(-0.9, 0.45);
+  const imag = f.formula === "burningJulia"
+    ? randomBetween(-1.2, -0.2)
+    : randomBetween(-0.9, 0.9);
+  setFixedJuliaParam(real, imag);
 }
 
 function share() {
@@ -1343,7 +2040,7 @@ canvas.addEventListener("wheel", e => {
 const keys = {};
 window.addEventListener("keydown", e => {
   keys[e.code] = true;
-  if (e.code === "KeyF") switchFractal();
+  if (e.code === "KeyF") switchFractal(e.shiftKey ? -1 : 1);
   if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
   if (e.code === "KeyX") toggleRefine();
   if (e.code === "KeyR") { resetView(); saveSettings(); }
@@ -1351,7 +2048,12 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { keys[e.code] = false; });
 
-ui.btnFractal.addEventListener("click", switchFractal);
+ui.btnPrevFractal.addEventListener("click", () => switchFractal(-1));
+ui.btnNextFractal.addEventListener("click", () => switchFractal(1));
+ui.fractalSelect.addEventListener("change", () => {
+  const idx = parseInt(ui.fractalSelect.value, 10);
+  if (Number.isInteger(idx) && idx >= 0 && idx < FRACTALS.length) selectFractal(idx);
+});
 ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
 ui.btnRefine.addEventListener("click", toggleRefine);
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
@@ -1363,6 +2065,10 @@ ui.btnShare.addEventListener("click",   share);
     saveSettings();
   });
 });
+["juliaReal","juliaImag"].forEach(id => {
+  ui[id].addEventListener("input", updateFixedJuliaParamFromInputs);
+});
+ui.btnRandomJulia.addEventListener("click", randomizeJuliaSeed);
 window.addEventListener("resize", () => { resize(); markDeepDirty(true); });
 
 // ─── Keyboard pan/zoom ────────────────────────────────────────────────────────
@@ -1411,7 +2117,7 @@ function render(now) {
   updateUI();
 
   const { prog, loc } = programs[state.fractalIdx];
-  const jc = juliaC();
+  const jc = getRenderJuliaC();
 
   const x0 = state.centerX - canvas.width  * 0.5 * state.pixelScale;
   const y0 = state.centerY - canvas.height * 0.5 * state.pixelScale;
