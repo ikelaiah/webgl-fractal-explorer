@@ -1,0 +1,105 @@
+# Changelog
+
+All notable changes to WebGL Fractal Explorer are documented here.
+
+## [1.0.0] — 2026-04-23
+
+Initial release.
+
+### Fractals (56 total)
+
+**Classic**
+- Mandelbrot Set
+- Burning Ship
+- Tricorn (Mandelbar)
+
+**Julia**
+- Julia Set (interactive parameter)
+- Phoenix Julia (interactive + Bloom preset)
+- Burning Ship Julia — Rift, Ember, Wake
+- Dendrite Julia
+- San Marco Dragon Julia
+- Tricorn Julia
+- Celtic Julia
+- Buffalo Julia
+- Perpendicular Julia
+- Cubic Julia
+- Quartic Julia — Dahlia, Clover
+- Douady Rabbit Julia
+- Glynn Julia, Glynn Julia — Rosette
+- Sine Julia, Sine Julia — Veil
+- Mandelbar Julia
+- Rational Julia Lace
+- Nova Julia Bloom
+- Orbit Trap Rose Julia
+
+**Power**
+- Cubic Multibrot (z³ + c)
+- Quartic Multibrot (z⁴ + c)
+- Quintic Multibrot (z⁵ + c)
+- Octic Multibrot (z⁸ + c)
+
+**Folded**
+- Celtic Mandelbrot
+- Buffalo
+- Celtic Heart
+- Cubic Burning Ship
+- Quartic Burning Ship
+
+**Perpendicular**
+- Perpendicular Mandelbrot
+- Perpendicular Buffalo
+
+**Dynamic**
+- Lambda Mandelbrot (z ← c·z·(1−z))
+- Spider (z ← z²+c; c ← c/2+z)
+
+**Transcendental**
+- Sine Mandelbrot (z ← sin(z)+c)
+- Cosine Mandelbrot (z ← cos(z)+c)
+
+**Box Fold**
+- Mandelbox
+
+**Mandelbar**
+- Cubic Mandelbar (conjugate cube)
+
+**Rational**
+- Magnet Type I
+- Feather (z³/(1+z²)+c)
+- Rational Mandelbrot Lace
+
+**Basins**
+- Newton Cubic Basins
+- Nova Basins (relaxed Newton, relax=(0.85+0.35i))
+- Newton Quartic Basins
+- Relaxed Newton Spiral (relax=(0.60+0.60i))
+- Relaxed Newton Storm (relax=(−0.30+0.90i))
+- Halley Cubic Basins
+
+**Orbit Trap**
+- Orbit Trap Mandelbrot (circle + cross + diagonal)
+- Orbit Trap Flower (petals + ring + axis)
+- Orbit Trap Lotus (outer + inner + stem)
+
+### Rendering
+
+- WebGL 1.0 GPU path with per-fractal GLSL fragment shaders
+- Triple-single-precision coordinate arithmetic in shaders (~72-bit mantissa, ~10¹⁴× zoom depth)
+- Smooth iteration colouring: `sm = iter − log₂(max(1, log₂(|z|²))) + 4`
+- 5 cosine colour palettes with adjustable cycle offset
+- Basin colouring for Newton/Halley fractals (3-root and 4-root variants)
+- Orbit trap colouring with per-trap custom shape distances
+- CPU refinement via Web Workers (up to 8 workers, progressive 8→4→2→1 pixel passes)
+- CPU path mirrors all GPU formulas exactly for pixel-perfect refinement
+
+### UI
+
+- HUD panel: fractal selector (grouped by category), iteration range (32–1024), colour cycle, Julia parameter controls, mode readouts
+- Minimap overview (136–168 px) with live viewport indicator
+- Keyboard shortcuts: F (next), Shift+F (prev), P (palette), B (basin toggle), R (reset), C (share)
+- Mouse/touch: drag to pan, scroll/pinch to zoom
+- Per-fractal view state persisted to `localStorage`
+- URL share encoding (fractal, palette, color mode, center, scale, iterations, cycle, Julia C)
+- FPS and effective-iteration readouts
+- Julia C randomise button
