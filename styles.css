@@ -229,7 +229,7 @@ select option {
 
 .buttons {
   display: grid;
-  grid-template-columns: 38px 38px repeat(4, minmax(0, 1fr));
+  grid-template-columns: 38px 38px repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-top: 18px;
 }
@@ -252,6 +252,11 @@ button:hover,
 button:focus-visible {
   border-color: rgba(125, 240, 192, 0.75);
   outline: none;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 button.active {
