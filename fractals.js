@@ -535,6 +535,24 @@ void main() {
 }
 `;
 
+// -- Quartic Julia -------------------------------------------------------------
+const quarticJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+    z = vec2(z2.x*z2.x - z2.y*z2.y, 2.0*z2.x*z2.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
 // -- Cubic Burning Ship --------------------------------------------------------
 const burningShipCubicFrag = fragHeader + `
 void main() {
@@ -1045,6 +1063,60 @@ void main() {
 }
 `;
 
+// -- Orbit Trap Lotus ----------------------------------------------------------
+const orbitTrapLotusFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float trap = 32.0;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    float a = atan(z.y, z.x);
+    float r = length(z);
+    float outer = abs(r - (0.42 + 0.11 * cos(8.0 * a)));
+    float inner = abs(r - (0.18 + 0.07 * cos(5.0 * a + 0.8)));
+    float stem = min(abs(z.x * 0.65 + z.y * 0.35), abs(z.x * 0.65 - z.y * 0.35));
+    trap = min(trap, min(outer, min(inner, stem)));
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  float t = clamp(-log(max(trap, 1e-6)) * 0.16 + uCycle * 0.18, 0.0, 1.0);
+  vec3 base = cospalette(t, vec3(0.08, 0.34, 0.70));
+  float glow = smoothstep(0.20, 0.0, trap);
+  gl_FragColor = vec4(mix(base * 0.30, base, glow), 1.0);
+}
+`;
+
+// -- Orbit Trap Rose Julia -----------------------------------------------------
+const orbitTrapRoseJuliaFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  float trap = 32.0;
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+    float a = atan(z.y, z.x);
+    float r = length(z);
+    float rose = abs(r - (0.34 + 0.14 * cos(7.0 * a)));
+    float ring = abs(length(z - vec2(0.16, -0.10)) - 0.24);
+    float vein = min(abs(z.x + 0.22 * sin(3.0 * a)), abs(z.y - 0.18 * cos(4.0 * a)));
+    trap = min(trap, min(rose, min(ring, vein)));
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  float t = clamp(-log(max(trap, 1e-6)) * 0.19 + uCycle * 0.18, 0.0, 1.0);
+  vec3 base = cospalette(t, vec3(0.22, 0.48, 0.76));
+  float glow = smoothstep(0.17, 0.0, trap);
+  gl_FragColor = vec4(mix(base * 0.34, base, glow), 1.0);
+}
+`;
+
 // ─── Fractals registry ────────────────────────────────────────────────────────
 
 const FRACTALS = [
@@ -1075,6 +1147,8 @@ const FRACTALS = [
   { name: "Buffalo Julia",       category: "Julia",         src: buffaloJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.45, -0.55], formula: "buffaloJulia" },
   { name: "Perpendicular Julia", category: "Julia",         src: perpendicularJuliaFrag, center: [0.0, 0.0], scale: 3.0, julia: false, juliaParam: [0.22, -0.54], formula: "perpendicularJulia" },
   { name: "Cubic Julia",         category: "Julia",         src: cubicJuliaFrag,       center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [-0.1, 0.76], formula: "cubicJulia" },
+  { name: "Quartic Julia - Dahlia", category: "Julia",      src: quarticJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.68, 0.32], formula: "quarticJulia" },
+  { name: "Quartic Julia - Clover", category: "Julia",      src: quarticJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [0.50, 0.0], formula: "quarticJulia" },
   { name: "Cubic Burning Ship",  category: "Folded",        src: burningShipCubicFrag, center: [0.0, -0.2], scale: 3.2, julia: false, formula: "burningCubic" },
   { name: "Octic Multibrot",     category: "Power",         src: octicMultibrotFrag,   center: [0.0,  0.0], scale: 2.4, julia: false, formula: "octic" },
   { name: "Sine Mandelbrot",     category: "Transcendental", src: sineMandelbrotFrag,  center: [0.0,  0.0], scale: 6.0, julia: false, formula: "sine" },
@@ -1100,6 +1174,8 @@ const FRACTALS = [
   { name: "Nova Julia Bloom",    category: "Julia",         src: novaJuliaBloomFrag,   center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.16, 0.08], formula: "novaJuliaBloom" },
   { name: "Rational Mandelbrot Lace", category: "Rational", src: rationalMandelbrotLaceFrag, center: [-0.35, 0.0], scale: 3.3, julia: false, formula: "rationalMandelbrotLace" },
   { name: "Orbit Trap Flower",   category: "Orbit Trap",    src: orbitTrapFlowerFrag,  center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "orbitTrapFlower" },
+  { name: "Orbit Trap Lotus",    category: "Orbit Trap",    src: orbitTrapLotusFrag,   center: [-0.45, 0.0], scale: 3.3, julia: false, formula: "orbitTrapLotus" },
+  { name: "Orbit Trap Rose Julia", category: "Orbit Trap",  src: orbitTrapRoseJuliaFrag, center: [0.0, 0.0], scale: 3.0, julia: false, juliaParam: [-0.56, 0.38], formula: "orbitTrapRoseJulia" },
 ];
 
 const FORMULA_BEHAVIOR = Object.freeze({
@@ -1110,6 +1186,7 @@ const FORMULA_BEHAVIOR = Object.freeze({
   buffaloJulia: { initial: "julia" },
   perpendicularJulia: { initial: "julia" },
   cubicJulia: { initial: "julia" },
+  quarticJulia: { initial: "julia" },
   glynnJulia: { initial: "julia" },
   sineJulia: { initial: "julia" },
   mandelbarJulia: { initial: "julia" },
@@ -1126,6 +1203,8 @@ const FORMULA_BEHAVIOR = Object.freeze({
   halleyCubic: { initial: "point", newton: true, basinRoots: 3, colorModes: ["escape", "basin"] },
   orbitTrapMandelbrot: { orbitTrap: true },
   orbitTrapFlower: { orbitTrap: true },
+  orbitTrapLotus: { orbitTrap: true },
+  orbitTrapRoseJulia: { initial: "julia", orbitTrap: true },
 });
 
 FRACTALS.forEach(fractal => {

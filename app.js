@@ -628,7 +628,7 @@ function previewEscape(fractalIdx, x, y) {
     } else if (formula === "cubicMandelbar") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = -zy * (3 * x2 - y2) + cy;
-    } else if (formula === "quartic") {
+    } else if (formula === "quartic" || formula === "quarticJulia") {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
@@ -755,7 +755,12 @@ function previewEscape(fractalIdx, x, y) {
       const den = Math.max(dr * dr + di * di, 1e-8);
       nx = z2x + (0.22 * dr - 0.11 * di) / den + cx;
       ny = z2y + (-0.11 * dr - 0.22 * di) / den + cy;
-    } else if (formula === "orbitTrapMandelbrot" || formula === "orbitTrapFlower") {
+    } else if (
+      formula === "orbitTrapMandelbrot" ||
+      formula === "orbitTrapFlower" ||
+      formula === "orbitTrapLotus" ||
+      formula === "orbitTrapRoseJulia"
+    ) {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
       if (formula === "orbitTrapFlower") {
@@ -764,6 +769,20 @@ function previewEscape(fractalIdx, x, y) {
         const ring = Math.abs(Math.hypot(nx + 0.18, ny - 0.08) - 0.28);
         const axis = Math.min(Math.abs(nx + 0.18), Math.abs(ny - 0.08));
         trap = Math.min(trap, petals, ring, axis);
+      } else if (formula === "orbitTrapLotus") {
+        const a = Math.atan2(ny, nx);
+        const r = Math.hypot(nx, ny);
+        const outer = Math.abs(r - (0.42 + 0.11 * Math.cos(8 * a)));
+        const inner = Math.abs(r - (0.18 + 0.07 * Math.cos(5 * a + 0.8)));
+        const stem = Math.min(Math.abs(nx * 0.65 + ny * 0.35), Math.abs(nx * 0.65 - ny * 0.35));
+        trap = Math.min(trap, outer, inner, stem);
+      } else if (formula === "orbitTrapRoseJulia") {
+        const a = Math.atan2(ny, nx);
+        const r = Math.hypot(nx, ny);
+        const rose = Math.abs(r - (0.34 + 0.14 * Math.cos(7 * a)));
+        const ring = Math.abs(Math.hypot(nx - 0.16, ny + 0.10) - 0.24);
+        const vein = Math.min(Math.abs(nx + 0.22 * Math.sin(3 * a)), Math.abs(ny - 0.18 * Math.cos(4 * a)));
+        trap = Math.min(trap, rose, ring, vein);
       } else {
         const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
         const cross = Math.min(Math.abs(nx), Math.abs(ny));
@@ -1099,7 +1118,7 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     } else if (formula === "cubicMandelbar") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = -zy * (3 * x2 - y2) + cy;
-    } else if (formula === "quartic") {
+    } else if (formula === "quartic" || formula === "quarticJulia") {
       const qx = x2 - y2;
       const qy = 2 * xy;
       nx = qx * qx - qy * qy + cx;
@@ -1228,7 +1247,12 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       const den = Math.max(dr * dr + di * di, 1e-8);
       nx = z2x + (0.22 * dr - 0.11 * di) / den + cx;
       ny = z2y + (-0.11 * dr - 0.22 * di) / den + cy;
-    } else if (formula === "orbitTrapMandelbrot" || formula === "orbitTrapFlower") {
+    } else if (
+      formula === "orbitTrapMandelbrot" ||
+      formula === "orbitTrapFlower" ||
+      formula === "orbitTrapLotus" ||
+      formula === "orbitTrapRoseJulia"
+    ) {
       nx = x2 - y2 + cx;
       ny = 2 * xy + cy;
       if (formula === "orbitTrapFlower") {
@@ -1237,6 +1261,20 @@ function cpuEscape(formula, x, y, maxIter, jc) {
         const ring = Math.abs(Math.hypot(nx + 0.18, ny - 0.08) - 0.28);
         const axis = Math.min(Math.abs(nx + 0.18), Math.abs(ny - 0.08));
         trap = Math.min(trap, petals, ring, axis);
+      } else if (formula === "orbitTrapLotus") {
+        const a = Math.atan2(ny, nx);
+        const r = Math.hypot(nx, ny);
+        const outer = Math.abs(r - (0.42 + 0.11 * Math.cos(8 * a)));
+        const inner = Math.abs(r - (0.18 + 0.07 * Math.cos(5 * a + 0.8)));
+        const stem = Math.min(Math.abs(nx * 0.65 + ny * 0.35), Math.abs(nx * 0.65 - ny * 0.35));
+        trap = Math.min(trap, outer, inner, stem);
+      } else if (formula === "orbitTrapRoseJulia") {
+        const a = Math.atan2(ny, nx);
+        const r = Math.hypot(nx, ny);
+        const rose = Math.abs(r - (0.34 + 0.14 * Math.cos(7 * a)));
+        const ring = Math.abs(Math.hypot(nx - 0.16, ny + 0.10) - 0.24);
+        const vein = Math.min(Math.abs(nx + 0.22 * Math.sin(3 * a)), Math.abs(ny - 0.18 * Math.cos(4 * a)));
+        trap = Math.min(trap, rose, ring, vein);
       } else {
         const circle = Math.abs(Math.hypot(nx - 0.25, ny) - 0.45);
         const cross = Math.min(Math.abs(nx), Math.abs(ny));
@@ -1332,17 +1370,17 @@ function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESC
     return basinColor(sample.root, sample.iter, maxIter, cycle);
   }
   if (Number.isFinite(sample.trap)) {
-    const flower = sample.trapKind === "orbitTrapFlower";
-    const tScale = flower ? 0.17 : 0.18;
-    const shifts = flower ? [0.16, 0.36, 0.66] : [0.02, 0.32, 0.58];
-    const baseMix = flower ? 0.32 : 0.35;
-    const glowEdge = flower ? 0.18 : 0.16;
-    const t = Math.max(0, Math.min(1, -Math.log(Math.max(sample.trap, 1e-6)) * tScale + cycle * 0.18));
-    const g = Math.max(0, Math.min(1, (glowEdge - sample.trap) / glowEdge));
+    const trapStyle = {
+      orbitTrapFlower: { tScale: 0.17, shifts: [0.16, 0.36, 0.66], baseMix: 0.32, glowEdge: 0.18 },
+      orbitTrapLotus: { tScale: 0.16, shifts: [0.08, 0.34, 0.70], baseMix: 0.30, glowEdge: 0.20 },
+      orbitTrapRoseJulia: { tScale: 0.19, shifts: [0.22, 0.48, 0.76], baseMix: 0.34, glowEdge: 0.17 },
+    }[sample.trapKind] || { tScale: 0.18, shifts: [0.02, 0.32, 0.58], baseMix: 0.35, glowEdge: 0.16 };
+    const t = Math.max(0, Math.min(1, -Math.log(Math.max(sample.trap, 1e-6)) * trapStyle.tScale + cycle * 0.18));
+    const g = Math.max(0, Math.min(1, (trapStyle.glowEdge - sample.trap) / trapStyle.glowEdge));
     const glow = g * g * (3 - 2 * g);
-    return shifts.map(shift => {
+    return trapStyle.shifts.map(shift => {
       const base = (0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255;
-      return Math.round(base * (baseMix + (1 - baseMix) * glow));
+      return Math.round(base * (trapStyle.baseMix + (1 - trapStyle.baseMix) * glow));
     });
   }
   if (sample.iter >= maxIter) return [0, 0, 0];
