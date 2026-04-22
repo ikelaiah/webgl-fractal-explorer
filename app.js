@@ -99,6 +99,10 @@ const ui = {
   btnRefine:   document.getElementById("btnRefine"),
   btnReset:    document.getElementById("btnReset"),
   btnShare:    document.getElementById("btnShare"),
+  btnHideHud:  document.getElementById("btnHideHud"),
+  btnShowHud:  document.getElementById("btnShowHud"),
+  iterValue:   document.getElementById("iterValue"),
+  hud:         document.querySelector(".hud"),
 };
 
 const fractalOptionGroups = new Map();
@@ -457,6 +461,7 @@ function updateUI() {
   syncJuliaParamInputs();
   ui.iterReadout.textContent = getRenderIterations();
   ui.modeReadout.textContent = getRenderModeLabel();
+  ui.btnRefine.textContent = state.cpuRefine ? "Refine ON" : "Refine";
   ui.btnRefine.classList.toggle("active", state.cpuRefine);
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
@@ -1696,6 +1701,12 @@ function selectFractal(idx) {
   saveSettings();
 }
 
+function toggleHud() {
+  const hidden = !ui.hud.hidden;
+  ui.hud.hidden = hidden;
+  ui.btnShowHud.hidden = !hidden;
+}
+
 function toggleRefine() {
   state.cpuRefine = !state.cpuRefine;
   markDeepDirty(true);
@@ -1813,6 +1824,7 @@ window.addEventListener("keydown", e => {
   if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
   if (e.code === "KeyB") toggleColorMode();
   if (e.code === "KeyX") toggleRefine();
+  if (e.code === "KeyH") toggleHud();
   if (e.code === "KeyR") { resetView(); saveSettings(); }
   if (e.code === "KeyC") share();
 });
@@ -1827,11 +1839,14 @@ ui.fractalSelect.addEventListener("change", () => {
 ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
 ui.btnColorMode.addEventListener("click", toggleColorMode);
 ui.btnRefine.addEventListener("click", toggleRefine);
+ui.btnHideHud.addEventListener("click", toggleHud);
+ui.btnShowHud.addEventListener("click", toggleHud);
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
 ui.btnShare.addEventListener("click",   share);
 ["iterations","colorCycle","juliaAngle"].forEach(id => {
   ui[id].addEventListener("input", () => {
-    if (id !== "iterations") markMinimapDirty();
+    if (id === "iterations") ui.iterValue.textContent = ui.iterations.value;
+    else markMinimapDirty();
     markDeepDirty(true);
     saveSettings();
   });
@@ -1922,5 +1937,6 @@ resetView(0);
 loadSettings();
 loadFromParams();
 if (!state.pixelScale) resetView();
+ui.iterValue.textContent = ui.iterations.value;
 
 requestAnimationFrame(render);

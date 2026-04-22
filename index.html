@@ -19,6 +19,7 @@
             <h1>Fractal Explorer</h1>
             <p id="fractalName">Mandelbrot Set</p>
           </div>
+          <button id="btnHideHud" type="button" title="Hide panel (H)" aria-label="Hide controls panel">&#x2715;</button>
         </div>
 
         <div class="readouts">
@@ -47,7 +48,10 @@
           </label>
           <label>
             <span>Iterations</span>
-            <input id="iterations" type="range" min="32" max="1024" step="8" value="256">
+            <div class="slider-row">
+              <input id="iterations" type="range" min="32" max="1024" step="8" value="256">
+              <span id="iterValue" class="slider-value">256</span>
+            </div>
           </label>
           <label>
             <span>Color</span>
@@ -60,16 +64,16 @@
           <label id="fixedJuliaRow" style="display:none">
             <span>Julia C</span>
             <div class="julia-picker">
-              <input id="juliaReal" type="number" min="-1.5" max="1.5" step="0.001" aria-label="Julia real component">
-              <input id="juliaImag" type="number" min="-1.5" max="1.5" step="0.001" aria-label="Julia imaginary component">
+              <input id="juliaReal" type="number" step="0.001" aria-label="Julia real component">
+              <input id="juliaImag" type="number" step="0.001" aria-label="Julia imaginary component">
               <button id="btnRandomJulia" type="button" title="Randomize Julia seed">Rnd</button>
             </div>
           </label>
         </div>
 
         <div class="buttons" role="group" aria-label="Mode controls">
-          <button id="btnPrevFractal" type="button" title="Previous fractal (Shift+F)">&lt;</button>
-          <button id="btnNextFractal" type="button" title="Next fractal (F)">&gt;</button>
+          <button id="btnPrevFractal" type="button" title="Previous fractal (Shift+F)">&lt; Prev</button>
+          <button id="btnNextFractal" type="button" title="Next fractal (F)">Next &gt;</button>
           <button id="btnPalette" type="button" title="Change palette (P)">Palette</button>
           <button id="btnColorMode" type="button" title="Toggle basin color mode (B)">Escape</button>
           <button id="btnRefine"  type="button" title="Toggle CPU refinement">Refine</button>
@@ -77,6 +81,8 @@
           <button id="btnShare"   type="button" title="Copy link (C)">Share</button>
         </div>
       </section>
+
+      <button id="btnShowHud" type="button" class="show-hud-btn" title="Show controls (H)" aria-label="Show controls panel" hidden>&#9776;</button>
 
       <section class="tips" aria-label="Input hints">
         <span>Drag to pan</span>
@@ -87,6 +93,7 @@
         <span>B — color mode</span>
         <span>R — reset</span>
         <span>C — share</span>
+        <span>H — hide panel</span>
       </section>
     </main>
 
