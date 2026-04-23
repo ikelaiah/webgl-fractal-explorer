@@ -96,6 +96,13 @@ At zoom levels above 10⁵× the GPU pixel grid becomes visibly blocky. When **R
 
 ## 🚀 Run Locally
 
+Clone the project:
+
+```bash
+git clone https://github.com/ikelaiah/webgl-fractal-explorer.git
+cd webgl-fractal-explorer
+```
+
 No build step required. Open `index.html` directly in any WebGL-capable browser, or serve the directory with any static file server:
 
 ```bash
@@ -110,57 +117,12 @@ Then open the local URL shown by the server. For `python -m http.server`, the de
 http://localhost:8000
 ```
 
-## 🌍 Publish on GitHub
+## 🌍 Live Demo
 
-This project is a static site, so it can be published directly from the repository with GitHub Pages. No build step or hosting backend is required.
-
-### 1. Create the repository 📦
-
-1. Sign in to GitHub.
-2. Create a new repository, for example `webgl-fractal-explorer`.
-3. Leave **Add a README file**, **Add .gitignore**, and **Choose a license** unchecked if this local project already has those files.
-
-### 2. Push the local project ⬆️
-
-From this project directory, run:
-
-```bash
-git status
-git add index.html styles.css app.js fractals.js README.md CHANGELOG.md
-git commit -m "Initial WebGL fractal explorer"
-git remote add origin https://github.com/ikelaiah/webgl-fractal-explorer.git
-git branch -M main
-git push -u origin main
-```
-
-If `git remote add origin ...` says the remote already exists, update it instead:
-
-```bash
-git remote set-url origin https://github.com/ikelaiah/webgl-fractal-explorer.git
-git push -u origin main
-```
-
-### 3. Enable GitHub Pages 🟢
-
-1. Open the repository on GitHub.
-2. Go to **Settings** → **Pages**.
-3. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
-4. Set **Branch** to `main` and folder to `/ (root)`.
-5. Save.
-
-GitHub will publish the app at:
+The app is published with GitHub Pages:
 
 ```text
 https://ikelaiah.github.io/webgl-fractal-explorer/
-```
-
-The first deployment can take a few minutes. Later changes are published by committing and pushing to `main`:
-
-```bash
-git status
-git add index.html styles.css app.js fractals.js README.md CHANGELOG.md
-git commit -m "Update fractal explorer"
-git push
 ```
 
 ## 🌐 Browser Support
