@@ -4,7 +4,7 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 
 ## ✨ Features
 
-- 🌀 **56 fractals** across 13 categories: Classic, Julia, Power, Folded, Perpendicular, Dynamic, Transcendental, Box Fold, Mandelbar, Rational, Basins, and Orbit Trap
+- 🌀 **65 fractals** across 12 categories: Classic, Julia, Power, Folded, Perpendicular, Dynamic, Transcendental, Box Fold, Mandelbar, Rational, Basins, and Orbit Trap
 - 🔬 **Triple-single precision** coordinate arithmetic (~72 bits) in GLSL shaders, enabling zoom depths to ~10¹⁴×
 - ⚡ **CPU refinement mode** via Web Workers (up to 8 workers) with progressive multi-pass rendering
 - 🎨 **5 cosine color palettes** with adjustable cycle offset
@@ -20,17 +20,17 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 | Category | Fractals |
 |---|---|
 | Classic | Mandelbrot Set, Burning Ship, Tricorn (Mandelbar) |
-| Julia | Julia Set, Phoenix Julia × 2, Burning Ship Julia × 3, Dendrite Julia, San Marco Dragon Julia, Tricorn Julia, Celtic Julia, Buffalo Julia, Perpendicular Julia, Cubic Julia, Quartic Julia × 2, Douady Rabbit Julia, Glynn Julia × 2, Sine Julia × 2, Mandelbar Julia, Rational Julia Lace, Nova Julia Bloom, Orbit Trap Rose Julia |
+| Julia | Julia Set, Phoenix Julia × 2, Burning Ship Julia × 3, Dendrite Julia, San Marco Dragon Julia, Tricorn Julia, Celtic Julia, Buffalo Julia, Perpendicular Julia, Cubic Julia, Quartic Julia × 3, Douady Rabbit Julia, Glynn Julia × 2, Sine Julia × 2, Mandelbar Julia, Rational Julia Lace, Nova Julia Bloom, Zubieta Julia × 2 |
 | Power | Cubic Multibrot, Quartic Multibrot, Quintic Multibrot, Octic Multibrot |
 | Folded | Celtic Mandelbrot, Buffalo, Celtic Heart, Cubic Burning Ship, Quartic Burning Ship |
-| Perpendicular | Perpendicular Mandelbrot, Perpendicular Buffalo |
+| Perpendicular | Perpendicular Mandelbrot, Perpendicular Buffalo, Perpendicular Burning Ship |
 | Dynamic | Lambda Mandelbrot, Spider |
-| Transcendental | Sine Mandelbrot, Cosine Mandelbrot |
+| Transcendental | Sine Mandelbrot, Cosine Mandelbrot, Exponential Mandelbrot |
 | Box Fold | Mandelbox |
 | Mandelbar | Cubic Mandelbar |
-| Rational | Magnet Type I, Feather, Rational Mandelbrot Lace |
-| Basins | Newton Cubic, Nova, Newton Quartic, Relaxed Newton Spiral, Relaxed Newton Storm, Halley Cubic |
-| Orbit Trap | Orbit Trap Mandelbrot, Orbit Trap Flower, Orbit Trap Lotus |
+| Rational | Magnet Type I, Magnet Type II, Feather, Rational Mandelbrot Lace |
+| Basins | Newton Cubic, Nova, Newton Quartic, Relaxed Newton Spiral, Relaxed Newton Storm, Halley Cubic, Newton Quintic |
+| Orbit Trap | Orbit Trap Mandelbrot, Orbit Trap Flower, Orbit Trap Lotus, Orbit Trap Rose Julia, Orbit Trap Star, Orbit Trap Web |
 
 ## 🎮 Controls
 
@@ -42,9 +42,12 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 | `Shift+F` | Previous fractal |
 | `P` | Cycle palette |
 | `B` | Toggle basin/escape color mode |
+| `X` | Toggle CPU refinement |
 | `R` | Reset view |
 | `C` | Copy share link |
 | `H` | Hide/show controls panel |
+| `W` / `A` / `S` / `D` or arrow keys | Pan |
+| `+` / `-` | Zoom in/out |
 
 Additional controls in the HUD panel:
 
@@ -125,15 +128,15 @@ From this project directory, run:
 git status
 git add index.html styles.css app.js fractals.js README.md CHANGELOG.md
 git commit -m "Initial WebGL fractal explorer"
-git remote add origin https://github.com/YOUR-USERNAME/webgl-fractal-explorer.git
+git remote add origin https://github.com/ikelaiah/webgl-fractal-explorer.git
 git branch -M main
 git push -u origin main
 ```
 
-Replace `YOUR-USERNAME` with your GitHub username. If `git remote add origin ...` says the remote already exists, update it instead:
+If `git remote add origin ...` says the remote already exists, update it instead:
 
 ```bash
-git remote set-url origin https://github.com/YOUR-USERNAME/webgl-fractal-explorer.git
+git remote set-url origin https://github.com/ikelaiah/webgl-fractal-explorer.git
 git push -u origin main
 ```
 
@@ -148,13 +151,14 @@ git push -u origin main
 GitHub will publish the app at:
 
 ```text
-https://YOUR-USERNAME.github.io/webgl-fractal-explorer/
+https://ikelaiah.github.io/webgl-fractal-explorer/
 ```
 
 The first deployment can take a few minutes. Later changes are published by committing and pushing to `main`:
 
 ```bash
-git add .
+git status
+git add index.html styles.css app.js fractals.js README.md CHANGELOG.md
 git commit -m "Update fractal explorer"
 git push
 ```
