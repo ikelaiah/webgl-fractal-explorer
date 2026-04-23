@@ -27,6 +27,7 @@ uniform float uPalette;
 uniform float uCycle;
 uniform vec2  uJuliaC;
 uniform int   uColorMode;
+uniform int   uColorStyle;
 
 #define MAX_ITER 1024
 #define PI  3.14159265359
@@ -47,17 +48,53 @@ float worldCoord(vec3 corner, float offset) {
   return r1 + r3;
 }
 
+vec3 tonePrimary(int p) {
+  if      (p == 0) return vec3(0.08, 0.82, 1.00);
+  else if (p == 1) return vec3(1.00, 0.54, 0.18);
+  else if (p == 2) return vec3(0.35, 0.95, 0.58);
+  else if (p == 3) return vec3(0.82, 0.46, 1.00);
+  else             return vec3(0.96, 0.86, 0.24);
+}
+
+vec3 toneSecondary(int p) {
+  if      (p == 0) return vec3(0.54, 0.13, 1.00);
+  else if (p == 1) return vec3(0.98, 0.18, 0.40);
+  else if (p == 2) return vec3(0.02, 0.56, 0.98);
+  else if (p == 3) return vec3(0.08, 0.64, 1.00);
+  else             return vec3(0.98, 0.34, 0.16);
+}
+
+vec3 tonePalette(float t) {
+  float v = smoothstep(0.08, 1.0, clamp(t, 0.0, 1.0));
+  float energy = pow(v, 1.35);
+  int p = int(uPalette);
+  vec3 dark = vec3(0.0, 0.006, 0.020);
+  vec3 a = tonePrimary(p);
+  if (uColorStyle == 1) {
+    return mix(dark, a, energy) * (0.22 + 0.78 * v);
+  }
+  vec3 b = toneSecondary(p);
+  vec3 ramp = mix(b, a, smoothstep(0.34, 0.96, v));
+  vec3 glow = ramp * smoothstep(0.70, 1.0, v) * 0.45;
+  return clamp(mix(dark, ramp, energy) + glow, 0.0, 1.0);
+}
+
 vec3 cospalette(float t, vec3 d) {
+  if (uColorStyle == 1 || uColorStyle == 2) return tonePalette(t);
   vec3 a = vec3(0.5), b = vec3(0.5), c = vec3(1.0);
   return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 interiorColor() {
+  if (uColorStyle == 1 || uColorStyle == 2) return vec3(0.0, 0.008, 0.026);
+  return vec3(0.0);
 }
 
 vec3 colorize(float iter, float maxIter, vec2 z) {
   // Escape-time fractals share this smooth coloring path. Basin and orbit-trap
   // shaders can override it when their formula needs a different visual model.
-  if (iter >= maxIter) return vec3(0.0);
+  if (iter >= maxIter) return interiorColor();
   float sm = iter - log2(max(1.0, log2(dot(z, z)))) + 4.0;
-  float t = fract(sm / maxIter + uCycle);
   vec3 d;
   int p = int(uPalette);
   if      (p == 0) d = vec3(0.00, 0.18, 0.36);
@@ -65,6 +102,8 @@ vec3 colorize(float iter, float maxIter, vec2 z) {
   else if (p == 2) d = vec3(0.04, 0.30, 0.22);
   else if (p == 3) d = vec3(0.28, 0.02, 0.38);
   else             d = vec3(0.38, 0.28, 0.04);
+  float raw = sm / maxIter;
+  float t = (uColorStyle == 1 || uColorStyle == 2) ? raw + uCycle * 0.08 : fract(raw + uCycle);
   return cospalette(t, d);
 }
 

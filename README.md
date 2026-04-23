@@ -7,7 +7,7 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 - 🌀 **65 fractals** across 12 categories: Classic, Julia, Power, Folded, Perpendicular, Dynamic, Transcendental, Box Fold, Mandelbar, Rational, Basins, and Orbit Trap
 - 🔬 **Triple-single precision** coordinate arithmetic (~72 bits) in GLSL shaders, enabling zoom depths to ~10¹⁴×
 - ⚡ **CPU refinement mode** via Web Workers (up to 8 workers) with progressive multi-pass rendering
-- 🎨 **5 cosine color palettes** with adjustable cycle offset
+- 🎨 **5 accent palettes** with cosine, monotone, and duotone rendering styles plus adjustable cycle offset
 - 🌈 **Basin coloring** for Newton/Halley fractals (3- and 4-root variants)
 - 🎯 **Orbit trap coloring** with custom shapes (circle/cross, flower petals, lotus, rose)
 - 🧭 **Per-fractal view memory** — each fractal remembers your last camera position
@@ -41,6 +41,7 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 | `F` | Next fractal |
 | `Shift+F` | Previous fractal |
 | `P` | Cycle palette |
+| `T` | Cycle tone style |
 | `B` | Toggle basin/escape color mode |
 | `X` | Toggle CPU refinement |
 | `R` | Reset view |
@@ -54,6 +55,7 @@ Additional controls in the HUD panel:
 - **Fractal** — dropdown selector, grouped by category
 - **Iterations** — 32–1024, step 8
 - **Color** — palette cycle offset
+- **Tone** — cosine palette, monotone, or duotone coloring
 - **Parameter** — Julia angle slider (for parameterised Julia sets)
 - **Julia C** — real/imaginary inputs with randomise button (for fixed-seed Julia sets)
 - **Refine** — toggle CPU high-precision overlay
@@ -65,7 +67,7 @@ Additional controls in the HUD panel:
 
 Each fractal is a standalone GLSL fragment shader compiled at startup. Pixel coordinates are reconstructed from triple-single-precision uniforms (`uX0`, `uY0`, `uScale`) to maintain floating-point accuracy at deep zooms.
 
-Smooth colouring uses the standard log-iteration formula:
+Smooth colouring uses the standard log-iteration formula, then maps that value through the selected tone style:
 
 ```
 sm = iter - log2(max(1, log2(|z|²))) + 4

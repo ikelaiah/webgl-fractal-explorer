@@ -382,10 +382,6 @@ button.active {
   }
 
   .tips {
-    right: auto;
-    left: 12px;
-    bottom: 148px;
-    justify-content: flex-start;
-    max-width: calc(100vw - 24px);
+    display: none;
   }
 }

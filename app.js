@@ -70,6 +70,7 @@ function getProgram(idx) {
       cycle:  gl.getUniformLocation(prog, "uCycle"),
       juliaC: gl.getUniformLocation(prog, "uJuliaC"),
       colorMode: gl.getUniformLocation(prog, "uColorMode"),
+      colorStyle: gl.getUniformLocation(prog, "uColorStyle"),
     },
   };
   return programs[idx];
@@ -91,6 +92,7 @@ const ui = {
   modeReadout: document.getElementById("modeReadout"),
   fractalSelect: document.getElementById("fractalSelect"),
   iterations:  document.getElementById("iterations"),
+  colorStyle:  document.getElementById("colorStyle"),
   colorCycle:  document.getElementById("colorCycle"),
   juliaRow:    document.getElementById("juliaRow"),
   juliaAngle:  document.getElementById("juliaAngle"),
@@ -150,6 +152,9 @@ const CPU_WORKER_BATCH_BLOCKS = 16384;
 const CPU_PREVIEW_ZOOM_THRESHOLD = 1e5;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
+const COLOR_STYLE_PALETTE = 0;
+const COLOR_STYLE_MONOTONE = 1;
+const COLOR_STYLE_DUOTONE = 2;
 
 const state = {
   // Camera movement uses a current value plus a target value. Input changes the
@@ -157,6 +162,7 @@ const state = {
   fractalIdx: 0,
   palette: 0,
   colorMode: COLOR_MODE_ESCAPE,
+  colorStyle: COLOR_STYLE_PALETTE,
   cpuRefine: true,
   centerX: FRACTALS[0].center[0],
   centerY: FRACTALS[0].center[1],
@@ -180,6 +186,12 @@ const gesture = {
   pinchAnchorX: 0,
   pinchAnchorY: 0,
 };
+
+function normalizeColorStyle(value) {
+  const parsed = parseInt(value, 10);
+  if (parsed === COLOR_STYLE_MONOTONE || parsed === COLOR_STYLE_DUOTONE) return parsed;
+  return COLOR_STYLE_PALETTE;
+}
 
 let minimapDirty = true;
 const cpuRender = {
@@ -307,6 +319,7 @@ function saveSettings() {
       fractalIdx: state.fractalIdx,
       palette:    state.palette,
       colorMode:  state.colorMode,
+      colorStyle: state.colorStyle,
       iterations: ui.iterations.value,
       colorCycle: ui.colorCycle.value,
       juliaAngle: ui.juliaAngle.value,
@@ -322,6 +335,7 @@ function loadSettings() {
     if (s.fractalIdx !== undefined) state.fractalIdx = Math.max(0, Math.min(parseInt(s.fractalIdx, 10) || 0, FRACTALS.length - 1));
     if (s.palette    !== undefined) state.palette    = Math.max(0, Math.min(parseInt(s.palette, 10) || 0, 4));
     if (s.colorMode  !== undefined) state.colorMode  = parseInt(s.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE;
+    if (s.colorStyle !== undefined) state.colorStyle = normalizeColorStyle(s.colorStyle);
     if (s.iterations) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(s.iterations, 10) || DEFAULT_ITER, MAX_ITER));
     if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
     if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
@@ -361,6 +375,7 @@ function stateToParams() {
     f:  state.fractalIdx,
     pa: state.palette,
     cm: state.colorMode,
+    cs: state.colorStyle,
     cx: state.targetCenterX.toFixed(15),
     cy: state.targetCenterY.toFixed(15),
     ps: state.targetPixelScale.toExponential(6),
@@ -381,6 +396,7 @@ function loadFromParams() {
   if (p.has("f"))  state.fractalIdx = Math.max(0, Math.min(parseInt(p.get("f"), 10) || 0, FRACTALS.length - 1));
   if (p.has("pa")) state.palette    = Math.max(0, Math.min(parseInt(p.get("pa"), 10) || 0, 4));
   if (p.has("cm")) state.colorMode  = parseInt(p.get("cm"), 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE;
+  if (p.has("cs")) state.colorStyle = normalizeColorStyle(p.get("cs"));
   if (p.has("cx")) state.centerX    = parseFloat(p.get("cx")) || 0;
   if (p.has("cy")) state.centerY    = parseFloat(p.get("cy")) || 0;
   if (p.has("ps")) state.pixelScale = parseFloat(p.get("ps")) || 0;
@@ -484,6 +500,7 @@ function updateUI() {
   const f = FRACTALS[state.fractalIdx];
   ui.fractalName.textContent = f.name;
   ui.fractalSelect.value = String(state.fractalIdx);
+  ui.colorStyle.value = String(state.colorStyle);
   ui.juliaRow.style.display  = f.julia ? "" : "none";
   ui.fixedJuliaRow.style.display = f.juliaParam ? "" : "none";
   syncJuliaParamInputs();
@@ -491,6 +508,7 @@ function updateUI() {
   ui.modeReadout.textContent = getRenderModeLabel();
   ui.btnRefine.textContent = state.cpuRefine ? "Refine ON" : "Refine";
   ui.btnRefine.classList.toggle("active", state.cpuRefine);
+  ui.btnPalette.textContent = state.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
   ui.btnColorMode.disabled = !supportsBasinMode;
@@ -549,17 +567,10 @@ function resizeMinimap() {
   return true;
 }
 
-function cosinePalette(t, paletteIdx) {
+function cosinePalette(t, paletteIdx, colorStyle = COLOR_STYLE_PALETTE) {
   // Keep this palette math in sync with the GLSL cospalette/colorize helpers so
   // the minimap and CPU overlay resemble the WebGL render.
-  const shifts = [
-    [0.00, 0.18, 0.36],
-    [0.46, 0.08, 0.02],
-    [0.04, 0.30, 0.22],
-    [0.28, 0.02, 0.38],
-    [0.38, 0.28, 0.04],
-  ][paletteIdx] || [0.00, 0.18, 0.36];
-  return shifts.map(shift => Math.round((0.5 + 0.5 * Math.cos(Math.PI * 2 * (t + shift))) * 255));
+  return writeStyleColor(t, paletteIdx, colorStyle);
 }
 
 function formulaMeta(formula) {
@@ -954,7 +965,7 @@ function renderMinimapBackground() {
       const iter = sample ? sample.iter : previewEscape(state.fractalIdx, x, y);
       const offset = (py * w + px) * 4;
       if (sample) {
-        const [r, g, b] = cpuColor(sample, MINIMAP_ITER, state.palette, cycle, state.colorMode);
+        const [r, g, b] = cpuColor(sample, MINIMAP_ITER, state.palette, cycle, state.colorMode, state.colorStyle);
         image.data[offset] = Math.round(r * 0.82);
         image.data[offset + 1] = Math.round(g * 0.82);
         image.data[offset + 2] = Math.round(b * 0.82);
@@ -964,7 +975,7 @@ function renderMinimapBackground() {
         image.data[offset + 2] = 7;
       } else {
         const t = iter / MINIMAP_ITER + cycle * 0.08;
-        const [r, g, b] = cosinePalette(t, state.palette);
+        const [r, g, b] = cosinePalette(t, state.palette, state.colorStyle);
         image.data[offset] = Math.round(r * 0.82);
         image.data[offset + 1] = Math.round(g * 0.82);
         image.data[offset + 2] = Math.round(b * 0.82);
@@ -1082,6 +1093,12 @@ function cpuWorkerSource() {
     quinticRootId,
     basinRootId,
     basinColor,
+    paletteBaseIndex,
+    toneBaseIndex,
+    smooth01,
+    writeCosineColor,
+    writeToneColor,
+    writeStyleColor,
     mandelbrotInSet,
     escapeMandelbrot,
     escapeJulia,
@@ -1093,6 +1110,9 @@ function cpuWorkerSource() {
   return `
 const COLOR_MODE_ESCAPE = ${COLOR_MODE_ESCAPE};
 const COLOR_MODE_BASIN = ${COLOR_MODE_BASIN};
+const COLOR_STYLE_PALETTE = ${COLOR_STYLE_PALETTE};
+const COLOR_STYLE_MONOTONE = ${COLOR_STYLE_MONOTONE};
+const COLOR_STYLE_DUOTONE = ${COLOR_STYLE_DUOTONE};
 const FORMULA_META = ${JSON.stringify(FORMULA_META)};
 const FORMULA_ID = ${JSON.stringify(FORMULA_ID)};
 const TWO_PI = Math.PI * 2;
@@ -1102,6 +1122,13 @@ const PALETTE_SHIFTS = new Float64Array([
   0.04, 0.30, 0.22,
   0.28, 0.02, 0.38,
   0.38, 0.28, 0.04,
+]);
+const TONE_COLORS = new Uint8Array([
+   20, 209, 255, 138,  34, 255,
+  255, 138,  46, 250,  46, 102,
+   89, 242, 148,   5, 143, 250,
+  209, 117, 255,  20, 163, 255,
+  245, 219,  61, 250,  87,  41,
 ]);
 const TRAP_STYLE_FLOWER = { tScale: 0.17, s0: 0.16, s1: 0.36, s2: 0.66, baseMix: 0.32, glowEdge: 0.18 };
 const TRAP_STYLE_LOTUS  = { tScale: 0.16, s0: 0.08, s1: 0.34, s2: 0.70, baseMix: 0.30, glowEdge: 0.20 };
@@ -1155,7 +1182,8 @@ self.onmessage = event => {
       _snap.iter,
       _snap.palette,
       _snap.cycle,
-      _snap.colorMode
+      _snap.colorMode,
+      _snap.colorStyle
     );
     const p = i * 4;
     colors[p] = color[0];
@@ -1808,6 +1836,13 @@ const PALETTE_SHIFTS = new Float64Array([
   0.28, 0.02, 0.38,
   0.38, 0.28, 0.04,
 ]);
+const TONE_COLORS = new Uint8Array([
+   20, 209, 255, 138,  34, 255,
+  255, 138,  46, 250,  46, 102,
+   89, 242, 148,   5, 143, 250,
+  209, 117, 255,  20, 163, 255,
+  245, 219,  61, 250,  87,  41,
+]);
 const TRAP_STYLE_FLOWER = { tScale: 0.17, s0: 0.16, s1: 0.36, s2: 0.66, baseMix: 0.32, glowEdge: 0.18 };
 const TRAP_STYLE_LOTUS  = { tScale: 0.16, s0: 0.08, s1: 0.34, s2: 0.70, baseMix: 0.30, glowEdge: 0.20 };
 const TRAP_STYLE_ROSE   = { tScale: 0.19, s0: 0.22, s1: 0.48, s2: 0.76, baseMix: 0.34, glowEdge: 0.17 };
@@ -1815,7 +1850,62 @@ const TRAP_STYLE_DEFAULT = { tScale: 0.18, s0: 0.02, s1: 0.32, s2: 0.58, baseMix
 const _COLOR = [0, 0, 0];
 const TWO_PI = Math.PI * 2;
 
-function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESCAPE) {
+function paletteBaseIndex(paletteIdx) {
+  return (paletteIdx >= 0 && paletteIdx < 5) ? paletteIdx * 3 : 0;
+}
+
+function toneBaseIndex(paletteIdx) {
+  return (paletteIdx >= 0 && paletteIdx < 5) ? paletteIdx * 6 : 0;
+}
+
+function smooth01(value) {
+  const v = value < 0 ? 0 : (value > 1 ? 1 : value);
+  return v * v * (3 - 2 * v);
+}
+
+function writeCosineColor(t, paletteIdx, mix = 1) {
+  const base = paletteBaseIndex(paletteIdx);
+  _COLOR[0] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base]))) * 255 * mix);
+  _COLOR[1] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 1]))) * 255 * mix);
+  _COLOR[2] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 2]))) * 255 * mix);
+  return _COLOR;
+}
+
+function writeToneColor(t, paletteIdx, colorStyle, mix = 1) {
+  const base = toneBaseIndex(paletteIdx);
+  const v = smooth01((t - 0.08) / 0.92);
+  const energy = Math.pow(v, 1.35);
+  const darkR = 0, darkG = 2, darkB = 5;
+  const aR = TONE_COLORS[base], aG = TONE_COLORS[base + 1], aB = TONE_COLORS[base + 2];
+
+  if (colorStyle === COLOR_STYLE_MONOTONE) {
+    const shade = (0.22 + 0.78 * v) * mix;
+    _COLOR[0] = Math.round((darkR + (aR - darkR) * energy) * shade);
+    _COLOR[1] = Math.round((darkG + (aG - darkG) * energy) * shade);
+    _COLOR[2] = Math.round((darkB + (aB - darkB) * energy) * shade);
+    return _COLOR;
+  }
+
+  const bR = TONE_COLORS[base + 3], bG = TONE_COLORS[base + 4], bB = TONE_COLORS[base + 5];
+  const split = smooth01((v - 0.34) / 0.62);
+  const glow = smooth01((v - 0.70) / 0.30) * 0.45;
+  const r = bR + (aR - bR) * split;
+  const g = bG + (aG - bG) * split;
+  const b = bB + (aB - bB) * split;
+  _COLOR[0] = Math.round(Math.min(255, (darkR + (r - darkR) * energy + r * glow) * mix));
+  _COLOR[1] = Math.round(Math.min(255, (darkG + (g - darkG) * energy + g * glow) * mix));
+  _COLOR[2] = Math.round(Math.min(255, (darkB + (b - darkB) * energy + b * glow) * mix));
+  return _COLOR;
+}
+
+function writeStyleColor(t, paletteIdx, colorStyle, mix = 1) {
+  if (colorStyle === COLOR_STYLE_MONOTONE || colorStyle === COLOR_STYLE_DUOTONE) {
+    return writeToneColor(t, paletteIdx, colorStyle, mix);
+  }
+  return writeCosineColor(t, paletteIdx, mix);
+}
+
+function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESCAPE, colorStyle = COLOR_STYLE_PALETTE) {
   if (colorMode === COLOR_MODE_BASIN && sample.root !== undefined) {
     return basinColor(sample.root, sample.iter, maxIter, cycle);
   }
@@ -1832,24 +1922,28 @@ function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESC
     g = g < 0 ? 0 : (g > 1 ? 1 : g);
     const glow = g * g * (3 - 2 * g);
     const mix = ts.baseMix + (1 - ts.baseMix) * glow;
+    if (colorStyle === COLOR_STYLE_MONOTONE || colorStyle === COLOR_STYLE_DUOTONE) {
+      return writeToneColor(t, paletteIdx, colorStyle, mix);
+    }
     _COLOR[0] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s0))) * 255 * mix);
     _COLOR[1] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s1))) * 255 * mix);
     _COLOR[2] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + ts.s2))) * 255 * mix);
     return _COLOR;
   }
   if (sample.iter >= maxIter) {
-    _COLOR[0] = 0; _COLOR[1] = 0; _COLOR[2] = 0;
+    if (colorStyle === COLOR_STYLE_MONOTONE || colorStyle === COLOR_STYLE_DUOTONE) {
+      _COLOR[0] = 0; _COLOR[1] = 2; _COLOR[2] = 7;
+    } else {
+      _COLOR[0] = 0; _COLOR[1] = 0; _COLOR[2] = 0;
+    }
     return _COLOR;
   }
   const mag2 = sample.mag2;
   const logMag = Math.log2(mag2);
   const sm = sample.iter - Math.log2(logMag > 1 ? logMag : 1) + 4;
-  const t = sm / maxIter + cycle;
-  const base = (paletteIdx >= 0 && paletteIdx < 5) ? paletteIdx * 3 : 0;
-  _COLOR[0] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base]))) * 255);
-  _COLOR[1] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 1]))) * 255);
-  _COLOR[2] = Math.round((0.5 + 0.5 * Math.cos(TWO_PI * (t + PALETTE_SHIFTS[base + 2]))) * 255);
-  return _COLOR;
+  const raw = sm / maxIter;
+  const t = (colorStyle === COLOR_STYLE_MONOTONE || colorStyle === COLOR_STYLE_DUOTONE) ? raw + cycle * 0.08 : raw + cycle;
+  return writeStyleColor(t, paletteIdx, colorStyle);
 }
 
 function makeCpuSnapshot() {
@@ -1861,6 +1955,7 @@ function makeCpuSnapshot() {
     formula: FRACTALS[state.fractalIdx].formula || "mandelbrot",
     palette: state.palette,
     colorMode: state.colorMode,
+    colorStyle: state.colorStyle,
     cycle: parseFloat(ui.colorCycle.value) || 0,
     iter: getRenderIterations(),
     width: deepCanvas.width,
@@ -1952,7 +2047,8 @@ function paintCpuBlock(blockIndex) {
     snap.iter,
     snap.palette,
     snap.cycle,
-    snap.colorMode
+    snap.colorMode,
+    snap.colorStyle
   );
 
   for (let y = yStart; y < yEnd; y++) {
@@ -2335,6 +2431,7 @@ window.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "KeyF") switchFractal(e.shiftKey ? -1 : 1);
   if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
+  if (e.code === "KeyT") { state.colorStyle = (state.colorStyle + 1) % 3; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
   if (e.code === "KeyB") toggleColorMode();
   if (e.code === "KeyX") toggleRefine();
   if (e.code === "KeyH") toggleHud();
@@ -2350,6 +2447,12 @@ ui.fractalSelect.addEventListener("change", () => {
   if (Number.isInteger(idx) && idx >= 0 && idx < FRACTALS.length) selectFractal(idx);
 });
 ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
+ui.colorStyle.addEventListener("change", () => {
+  state.colorStyle = normalizeColorStyle(ui.colorStyle.value);
+  markMinimapDirty();
+  markDeepDirty(true);
+  saveSettings();
+});
 ui.btnColorMode.addEventListener("click", toggleColorMode);
 ui.btnRefine.addEventListener("click", toggleRefine);
 ui.btnHideHud.addEventListener("click", toggleHud);
@@ -2440,6 +2543,7 @@ function render(now) {
   gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
   gl.uniform2f(loc.juliaC, jc[0], jc[1]);
   gl.uniform1i(loc.colorMode, state.colorMode);
+  gl.uniform1i(loc.colorStyle, state.colorStyle);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   drawMinimap();

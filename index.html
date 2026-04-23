@@ -57,6 +57,14 @@
             <span>Color</span>
             <input id="colorCycle" type="range" min="0" max="4" step="0.01" value="0">
           </label>
+          <label>
+            <span>Tone</span>
+            <select id="colorStyle" aria-label="Choose color tone style">
+              <option value="0">Palette</option>
+              <option value="1">Monotone</option>
+              <option value="2">Duotone</option>
+            </select>
+          </label>
           <label id="juliaRow" style="display:none">
             <span>Parameter</span>
             <input id="juliaAngle" type="range" min="0" max="6.2832" step="0.01" value="0">
@@ -90,6 +98,7 @@
         <span>Pinch to zoom</span>
         <span>F — next fractal</span>
         <span>P — palette</span>
+        <span>T — tone</span>
         <span>B — color mode</span>
         <span>R — reset</span>
         <span>C — share</span>
