@@ -1,5 +1,13 @@
 "use strict";
 
+// Shader and fractal catalog definitions. app.js consumes the globals exported
+// from this file: vertSrc, FRACTALS, and FORMULA_META.
+//
+// When adding a new formula, keep three layers aligned:
+// 1. A GLSL fragment shader for the interactive WebGL render.
+// 2. A FRACTALS registry entry for UI, camera defaults, and presets.
+// 3. CPU behavior metadata/implementation in app.js for minimap/refinement.
+
 // ─── Shaders ──────────────────────────────────────────────────────────────────
 
 const vertSrc = `
@@ -45,6 +53,8 @@ vec3 cospalette(float t, vec3 d) {
 }
 
 vec3 colorize(float iter, float maxIter, vec2 z) {
+  // Escape-time fractals share this smooth coloring path. Basin and orbit-trap
+  // shaders can override it when their formula needs a different visual model.
   if (iter >= maxIter) return vec3(0.0);
   float sm = iter - log2(max(1.0, log2(dot(z, z)))) + 4.0;
   float t = fract(sm / maxIter + uCycle);
@@ -59,6 +69,8 @@ vec3 colorize(float iter, float maxIter, vec2 z) {
 }
 
 vec2 cdiv(vec2 a, vec2 b) {
+  // Complex division helper used by rational/Newton-style formulas. The small
+  // denominator guard avoids NaNs that would otherwise poison a whole pixel.
   float d = max(dot(b, b), 1e-8);
   return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / d;
 }
@@ -92,6 +104,8 @@ float quarticRootId(vec2 z) {
 }
 
 vec3 basinColor(float root, float iter, float maxIter) {
+  // Basin shaders color by the root each point converges to, with iteration
+  // count used only as shading/ring detail.
   vec3 base;
   if      (root < 0.5) base = vec3(0.96, 0.34, 0.22);
   else if (root < 1.5) base = vec3(0.18, 0.72, 1.00);
@@ -1296,6 +1310,14 @@ void main() {
 `;
 
 // ─── Fractals registry ────────────────────────────────────────────────────────
+//
+// Registry fields:
+// - name/category: UI labels and dropdown grouping.
+// - src: fragment shader string compiled by app.js.
+// - center/scale/bounds: initial camera framing.
+// - julia: true when the circular Julia angle slider should be shown.
+// - juliaParam: fixed or user-editable Julia seed shown as real/imag inputs.
+// - formula: stable key used by CPU refinement and behavior metadata.
 
 const FRACTALS = [
   { name: "Mandelbrot Set",      category: "Classic",       src: mandelbrotFrag,       center: [-0.5, 0.0], scale: 3.5, julia: false, formula: "mandelbrot" },
@@ -1367,6 +1389,9 @@ const FRACTALS = [
   { name: "Quartic Julia - Crown", category: "Julia",         src: quarticJuliaFrag,     center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [0.0, 0.65], formula: "quarticJulia" },
 ];
 
+// Describes formula behavior that cannot be inferred from the shader string.
+// app.js uses this to initialize CPU samples, choose available color modes, and
+// decide whether basin/orbit-trap metadata is present.
 const FORMULA_BEHAVIOR = Object.freeze({
   julia: { initial: "julia" },
   burningJulia: { initial: "julia" },
@@ -1401,6 +1426,8 @@ const FORMULA_BEHAVIOR = Object.freeze({
 });
 
 FRACTALS.forEach(fractal => {
+  // Attach a normalized meta object to every registry item so UI/render code can
+  // read one shape regardless of whether a formula has custom behavior.
   const behavior = FORMULA_BEHAVIOR[fractal.formula] || {};
   fractal.meta = Object.freeze({
     initial: "origin",
@@ -1412,6 +1439,8 @@ FRACTALS.forEach(fractal => {
   });
 });
 
+// Condensed lookup keyed by formula name. Multiple presets can share one
+// formula, so keep the richest metadata seen for that formula.
 const FORMULA_META = Object.freeze(FRACTALS.reduce((meta, fractal) => {
   const current = meta[fractal.formula];
   if (!current || fractal.meta.basinRoots > current.basinRoots) {

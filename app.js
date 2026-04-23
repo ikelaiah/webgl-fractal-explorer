@@ -1,5 +1,9 @@
 "use strict";
 
+// Main runtime for the explorer. The fast preview is rendered by WebGL, while
+// the optional "Refine" overlay re-renders the settled viewport on the CPU for
+// deeper zooms and formula parity checks.
+
 const canvas = document.getElementById("fractal");
 const deepCanvas = document.getElementById("deepFractal");
 const minimap = document.getElementById("minimap");
@@ -49,6 +53,8 @@ function buildProgram(fragSrc) {
 const programs = FRACTALS.map(() => null);
 
 function getProgram(idx) {
+  // Shaders are compiled lazily so adding many fractals does not make startup
+  // pay for every program before the user visits it.
   if (programs[idx]) return programs[idx];
   const prog = buildProgram(FRACTALS[idx].src);
   programs[idx] = {
@@ -107,6 +113,8 @@ const ui = {
 
 const fractalOptionGroups = new Map();
 FRACTALS.forEach((fractal, idx) => {
+  // The registry in fractals.js is the source of truth for both rendering and
+  // navigation, so the dropdown is generated directly from it.
   let group = fractalOptionGroups.get(fractal.category);
   if (!group) {
     group = document.createElement("optgroup");
@@ -144,6 +152,8 @@ const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
 
 const state = {
+  // Camera movement uses a current value plus a target value. Input changes the
+  // target immediately; the render loop eases the current camera toward it.
   fractalIdx: 0,
   palette: 0,
   colorMode: COLOR_MODE_ESCAPE,
@@ -173,6 +183,9 @@ const gesture = {
 
 let minimapDirty = true;
 const cpuRender = {
+  // CPU refinement is a progressive block renderer. It first paints large
+  // blocks for a quick preview, then repeats with smaller blocks until pixel
+  // precision is reached.
   dirty: true,
   running: false,
   complete: false,
@@ -198,6 +211,8 @@ const cpuRender = {
 };
 
 function viewBoundsForFractal(idx = state.fractalIdx) {
+  // Most fractals fit a square extent, but wide formulas such as Mandelbox can
+  // override the initial camera with explicit bounds.
   const f = FRACTALS[idx] || FRACTALS[0];
   const bounds = f.bounds || {};
   const center = Array.isArray(bounds.center) ? bounds.center : f.center;
@@ -215,6 +230,8 @@ function resetView(idx) {
 }
 
 function setCameraTarget(cx, cy, pixelScale, immediate = false) {
+  // All camera mutations flow through this function so the CPU overlay can be
+  // invalidated whenever the view changes.
   const fallbackBounds = viewBoundsForFractal(state.fractalIdx);
   const fallback = Math.max(
     fallbackBounds.width / Math.max(canvas.width || 800, 1),
@@ -252,6 +269,7 @@ function cameraSettleTolerance(center, target, viewWidth) {
 }
 
 function nudgeCamera(dt) {
+  // Easing in log(scale) space makes zoom animation feel linear to the eye.
   if (!state.targetPixelScale) return;
   if (!state.pixelScale) {
     syncTargetToCurrent();
@@ -279,6 +297,8 @@ function nudgeCamera(dt) {
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 function saveSettings() {
+  // Global settings and per-fractal views are stored separately so switching
+  // formulas restores each fractal's last interesting location.
   try {
     const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
     views[state.fractalIdx] = { cx: state.targetCenterX, cy: state.targetCenterY, ps: state.targetPixelScale };
@@ -335,6 +355,8 @@ function restoreViewForFractal(idx) {
 // ─── URL share ────────────────────────────────────────────────────────────────
 
 function stateToParams() {
+  // Share links intentionally encode the target camera, not the eased current
+  // camera, so copied links match where the user is navigating.
   const params = new URLSearchParams({
     f:  state.fractalIdx,
     pa: state.palette,
@@ -397,6 +419,8 @@ function resize() {
 }
 
 function renderViewport() {
+  // Converts the active camera into the world-space rectangle used by both GPU
+  // uniforms and CPU refinement snapshots.
   const width = Math.max(canvas.width, 1);
   const height = Math.max(canvas.height, 1);
   const worldWidth = width * state.pixelScale;
@@ -418,6 +442,8 @@ function renderViewport() {
 // ─── Julia C ──────────────────────────────────────────────────────────────────
 
 function juliaC() {
+  // Interactive Julia sets use a circular parameter path; preset Julia variants
+  // use fixed values from the fractal registry instead.
   const a = parseFloat(ui.juliaAngle.value);
   return [0.7885 * Math.cos(a), 0.7885 * Math.sin(a)];
 }
@@ -524,6 +550,8 @@ function resizeMinimap() {
 }
 
 function cosinePalette(t, paletteIdx) {
+  // Keep this palette math in sync with the GLSL cospalette/colorize helpers so
+  // the minimap and CPU overlay resemble the WebGL render.
   const shifts = [
     [0.00, 0.18, 0.36],
     [0.46, 0.08, 0.02],
@@ -625,6 +653,9 @@ function basinColor(root, iter, maxIter, cycle = 0) {
 }
 
 function previewEscape(fractalIdx, x, y) {
+  // Lightweight CPU sampler used for the minimap. The full CPU refinement path
+  // below has more specialized hot loops, but this generic version is easier to
+  // keep broad enough for every formula.
   const formula = FRACTALS[fractalIdx].formula || "mandelbrot";
   const meta = formulaMeta(formula);
   const jc = getRenderJuliaC(fractalIdx);
@@ -998,6 +1029,11 @@ function drawMinimap() {
 }
 
 // ─── CPU refinement ───────────────────────────────────────────────────────────
+//
+// The GPU render is always the interactive base layer. When the camera stops,
+// this subsystem paints a 2D canvas over it using the same formulas in JS. The
+// generation/pass fields let old worker replies be ignored after a new camera
+// move, fractal switch, or settings change.
 
 function markDeepDirty(clear = false) {
   if (cpuRender.running && !cpuRender.previewOnly) cancelCpuWorkers();
@@ -1035,6 +1071,9 @@ function getCpuWorkerCount() {
 }
 
 function cpuWorkerSource() {
+  // Workers are built from selected main-thread functions. If a CPU formula
+  // helper changes, make sure it is included here or worker refinement will
+  // diverge from the main-thread fallback.
   const sharedFunctions = [
     formulaMeta,
     supportsBasinColor,
@@ -1161,6 +1200,8 @@ function ensureCpuWorkers() {
 }
 
 const FORMULA_ID = {
+  // Numeric dispatch keeps the CPU hot loop away from repeated string
+  // comparisons. Related formulas share IDs when their iteration body matches.
   mandelbrot: 0, julia: 1,
   burningShip: 2, burningJulia: 2,
   tricorn: 3, tricornJulia: 3, mandelbarJulia: 3,
@@ -1812,6 +1853,8 @@ function cpuColor(sample, maxIter, paletteIdx, cycle, colorMode = COLOR_MODE_ESC
 }
 
 function makeCpuSnapshot() {
+  // Snapshot everything a CPU pass needs so asynchronous workers are insulated
+  // from later UI/camera mutations.
   const viewport = renderViewport();
   return {
     fractalIdx: state.fractalIdx,
@@ -1831,6 +1874,8 @@ function makeCpuSnapshot() {
 }
 
 function startCpuRender() {
+  // Full refinement runs after input settles and progresses through all block
+  // sizes in CPU_PASSES.
   if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
   if (cpuRender.running) cancelCpuWorkers();
   deepCanvas.style.transform = "";
@@ -1853,6 +1898,8 @@ function startCpuRender() {
 }
 
 function startCpuPreview() {
+  // During very deep drags, paint only the first coarse pass and move that image
+  // with CSS. This gives visual continuity without recomputing every pointermove.
   if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
   if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
   if (cpuRender.running) cancelCpuWorkers();
@@ -1875,6 +1922,8 @@ function startCpuPreview() {
 }
 
 function setupCpuPass() {
+  // Each pass samples one color per square block. Later passes shrink the block
+  // size until step=1, which writes one color per pixel.
   cpuRender.step = CPU_PASSES[cpuRender.passIndex];
   cpuRender.cols = Math.ceil(cpuRender.snapshot.width / cpuRender.step);
   cpuRender.rows = Math.ceil(cpuRender.snapshot.height / cpuRender.step);
@@ -1885,6 +1934,7 @@ function setupCpuPass() {
 }
 
 function paintCpuBlock(blockIndex) {
+  // Main-thread fallback path: compute one block and fill every pixel inside it.
   const snap = cpuRender.snapshot;
   const step = cpuRender.step;
   const col = blockIndex % cpuRender.cols;
@@ -1917,6 +1967,8 @@ function paintCpuBlock(blockIndex) {
 }
 
 function paintCpuColorBatch(startBlock, colors) {
+  // Worker path: workers return compact RGBA colors per block; the main thread
+  // expands them into the ImageData buffer.
   const snap = cpuRender.snapshot;
   const step = cpuRender.step;
   const count = colors.length / 4;
@@ -1983,6 +2035,7 @@ function onCpuWorkerMessage(entry, data) {
   entry.busy = false;
   cpuRender.pendingBatches = Math.max(0, cpuRender.pendingBatches - 1);
 
+  // Stale replies are normal when a user moves before a pass finishes.
   if (data.generation !== cpuRender.activeGeneration ||
       data.passIndex !== cpuRender.passIndex ||
       !cpuRender.running ||
@@ -2041,6 +2094,8 @@ function processCpuRenderMain(generation) {
 }
 
 function maybeStartCpuRender(now) {
+  // Delay refinement until the camera and pointers are idle; otherwise the CPU
+  // would waste time painting frames that are immediately invalidated.
   if (!state.cpuRefine || !deepCtx || !cpuRender.dirty) return;
   if (cpuRender.running && !cpuRender.previewOnly) return;
   if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
@@ -2051,6 +2106,8 @@ function maybeStartCpuRender(now) {
 // ─── Input handlers ───────────────────────────────────────────────────────────
 
 function canvasPixelFromClient(clientX, clientY) {
+  // Pointer events arrive in CSS pixels; rendering math needs backing-store
+  // pixels because the canvas may be scaled for devicePixelRatio.
   const rect = canvas.getBoundingClientRect();
   const sx = canvas.width / Math.max(rect.width, 1);
   const sy = canvas.height / Math.max(rect.height, 1);
@@ -2061,6 +2118,7 @@ function canvasPixelFromClient(clientX, clientY) {
 }
 
 function worldAtClient(clientX, clientY, cx = state.targetCenterX, cy = state.targetCenterY, scale = state.targetPixelScale) {
+  // Convert a screen point into fractal coordinates for anchored zoom and pinch.
   const p = canvasPixelFromClient(clientX, clientY);
   return {
     x: (p.x - canvas.width * 0.5) * scale + cx,
@@ -2069,6 +2127,8 @@ function worldAtClient(clientX, clientY, cx = state.targetCenterX, cy = state.ta
 }
 
 function anchorTargetAtClient(clientX, clientY, worldX, worldY, scale) {
+  // Adjust the camera so the chosen world coordinate remains under the pointer
+  // after a scale change.
   const p = canvasPixelFromClient(clientX, clientY);
   setCameraTarget(
     worldX - (p.x - canvas.width * 0.5) * scale,
@@ -2104,6 +2164,8 @@ function beginPanFromPointer(p) {
 }
 
 function beginPinch() {
+  // Store the world point under the pinch midpoint so two-finger zoom feels
+  // locked to the user's fingers.
   const points = pointerList();
   if (points.length < 2) return;
   const a = points[0], b = points[1];
@@ -2134,6 +2196,8 @@ function switchFractal(direction = 1) {
 }
 
 function selectFractal(idx) {
+  // Preserve the current fractal's view before switching, then restore the next
+  // fractal's own saved view if one exists.
   if (idx === state.fractalIdx) return;
   saveViewForCurrentFractal();
   state.fractalIdx = idx;
@@ -2326,6 +2390,8 @@ function applyKeyboard(dt) {
 // ─── Triple-single split ──────────────────────────────────────────────────────
 
 function tsSplit(x) {
+  // WebGL 1.0 uniforms are 32-bit floats. Splitting the coordinate into three
+  // floats lets the shader reconstruct a higher-precision world origin.
   const hi  = Math.fround(x);
   const mid = Math.fround(x - hi);
   const lo  = Math.fround(x - hi - mid);
@@ -2335,6 +2401,8 @@ function tsSplit(x) {
 // ─── Render ───────────────────────────────────────────────────────────────────
 
 function render(now) {
+  // Frame order: update dimensions/input/camera, draw the GPU base layer, draw
+  // lightweight overlays, then optionally kick off deferred CPU refinement.
   resize();
   const dt = Math.min(0.05, (now - state.lastTime) * 0.001);
   state.lastTime = now;
