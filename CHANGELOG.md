@@ -2,6 +2,33 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.3.0] — 2026-04-25
+
+### Exploration workflow
+
+- Guided tours with curated stops, playback controls, shareable route state, and automatic camera moves
+- Inspector panel for current coordinates, fractal family, render mode, perturbation state, reference orbit, and active stop notes
+- Split-screen compare mode with a shared camera, independent fractal and tone controls, and a visible divider
+- PNG export for the current composed view and copyable formula display
+
+### Rendering
+
+- Perturbation diagnostics for Mandelbrot deep zooms, including fallback sample tracking and reference orbit reporting
+- Deep CPU/Perturb overlay retention while panning and zooming so refined imagery remains transformed until replacement pixels are ready
+- CPU worker sizing now preserves useful parallelism on browsers that report small `hardwareConcurrency` values instead of dropping two-core reports to `x1`
+- CPU preview rendering now continues to paint while the app still marks the camera dirty for the next full settled refinement
+
+### Fractals and colour
+
+- Monotone and duotone tone styles in addition to palette colouring
+- Additional fractals and formula corrections, including the Magnet Type II fix
+
+### UI
+
+- HUD redesigned for desktop and mobile with bounded internal scrolling, compact desktop grids, and a mobile bottom-sheet layout
+- Minimap, tips, readouts, form rows, and buttons tuned for smaller screens and touch targets
+- README and planning docs refreshed for the newer explorer workflow
+
 ## [1.2.0] — 2026-04-23
 
 ### Deep-zoom drag preview
