@@ -11,6 +11,7 @@
       <canvas id="fractal" aria-label="Interactive 2D fractal explorer"></canvas>
       <canvas id="deepFractal" aria-label="High precision fractal refinement"></canvas>
       <canvas id="minimap" aria-label="Fractal overview minimap"></canvas>
+      <div id="compareDivider" class="compare-divider" hidden aria-hidden="true"></div>
 
       <section class="hud" aria-label="Fractal controls">
         <div class="brand">
@@ -33,7 +34,7 @@
           </div>
           <div>
             <span>Eff. Iter</span>
-            <strong id="iterReadout">256</strong>
+            <strong id="iterReadout">64</strong>
           </div>
           <div>
             <span>Mode</span>
@@ -46,11 +47,18 @@
             <span>Fractal</span>
             <select id="fractalSelect" aria-label="Choose fractal"></select>
           </label>
+          <div class="formula-row">
+            <span>Formula</span>
+            <div class="formula-panel">
+              <textarea id="formulaDisplay" class="formula-display" rows="2" readonly spellcheck="false" aria-label="Active fractal formula"></textarea>
+              <button id="btnCopyFormula" type="button" title="Copy active formula">Copy</button>
+            </div>
+          </div>
           <label>
             <span>Iterations</span>
             <div class="slider-row">
-              <input id="iterations" type="range" min="32" max="1024" step="8" value="256">
-              <span id="iterValue" class="slider-value">256</span>
+              <input id="iterations" type="range" min="32" max="512" step="8" value="64">
+              <span id="iterValue" class="slider-value">64</span>
             </div>
           </label>
           <label>
@@ -86,8 +94,92 @@
           <button id="btnColorMode" type="button" title="Toggle basin color mode (B)">Escape</button>
           <button id="btnRefine"  type="button" title="Toggle CPU refinement">Refine</button>
           <button id="btnReset"   type="button" title="Reset view (R)">Reset</button>
+          <button id="btnExport"  type="button" title="Export current view as PNG">Export</button>
           <button id="btnShare"   type="button" title="Copy link (C)">Share</button>
         </div>
+
+        <section class="tour-panel" aria-label="Guided tours">
+          <div class="tour-header">
+            <strong>Tours</strong>
+            <span id="tourMeta">No tour selected</span>
+          </div>
+          <label class="tour-select-row">
+            <span>Route</span>
+            <select id="tourSelect" aria-label="Choose guided tour">
+              <option value="">None</option>
+            </select>
+          </label>
+          <div class="tour-card">
+            <div class="tour-card-head">
+              <strong id="tourStopTitle">Pick a tour</strong>
+              <span id="tourStopIndex">0 / 0</span>
+            </div>
+            <p id="tourStopNote" class="tour-note">Curated routes will guide you through interesting regions and keep the current stop shareable.</p>
+          </div>
+          <div class="tour-actions" role="group" aria-label="Tour controls">
+            <button id="btnTourPrev" type="button" title="Previous tour stop">&lt; Prev</button>
+            <button id="btnTourPlay" type="button" title="Play or pause tour">Play</button>
+            <button id="btnTourNext" type="button" title="Next tour stop">Next &gt;</button>
+          </div>
+        </section>
+
+        <section class="inspector-panel" aria-label="Explorer inspector">
+          <div class="inspector-header">
+            <strong>Inspector</strong>
+            <span id="inspectorBackend">GPU</span>
+          </div>
+          <div class="inspector-grid">
+            <div>
+              <span>X</span>
+              <strong id="inspectX">0</strong>
+            </div>
+            <div>
+              <span>Y</span>
+              <strong id="inspectY">0</strong>
+            </div>
+            <div>
+              <span>Zoom</span>
+              <strong id="inspectZoom">1×</strong>
+            </div>
+            <div>
+              <span>Iter</span>
+              <strong id="inspectIter">256</strong>
+            </div>
+            <div>
+              <span>Mode</span>
+              <strong id="inspectMode">Escape</strong>
+            </div>
+            <div>
+              <span>Family</span>
+              <strong id="inspectFamily">Classic</strong>
+            </div>
+          </div>
+          <p id="inspectSummary" class="inspector-summary">The inspector explains the active fractal, render backend, and current camera state.</p>
+        </section>
+
+        <section class="compare-panel" aria-label="Compare mode">
+          <div class="compare-header">
+            <strong>Compare</strong>
+            <button id="btnCompareToggle" type="button" title="Toggle compare mode">Off</button>
+          </div>
+          <label class="compare-row">
+            <span>Fractal</span>
+            <select id="compareFractalSelect" aria-label="Choose compare fractal"></select>
+          </label>
+          <label class="compare-row">
+            <span>Tone</span>
+            <select id="compareColorStyle" aria-label="Choose compare tone style">
+              <option value="0">Palette</option>
+              <option value="1">Monotone</option>
+              <option value="2">Duotone</option>
+            </select>
+          </label>
+          <div class="compare-actions" role="group" aria-label="Compare controls">
+            <button id="btnComparePalette" type="button" title="Cycle compare palette">Palette</button>
+            <button id="btnCompareColorMode" type="button" title="Toggle compare basin color mode">Escape</button>
+          </div>
+          <p id="compareSummary" class="compare-summary">Split-screen compare uses the same camera on both halves so formulas and coloring can be judged directly.</p>
+        </section>
       </section>
 
       <button id="btnShowHud" type="button" class="show-hud-btn" title="Show controls (H)" aria-label="Show controls panel" hidden>&#9776;</button>

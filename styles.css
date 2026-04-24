@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -61,6 +62,19 @@ select {
   height: 100%;
   display: block;
   pointer-events: none;
+}
+
+.compare-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(125, 240, 192, 0), rgba(125, 240, 192, 0.95), rgba(125, 240, 192, 0));
+  box-shadow: 0 0 18px rgba(125, 240, 192, 0.35);
+  transform: translateX(-1px);
 }
 
 #minimap {
@@ -193,7 +207,8 @@ label > span {
   gap: 12px;
 }
 
-label {
+.control-grid > label,
+.formula-row {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
   align-items: center;
@@ -216,7 +231,8 @@ input[type="number"] {
   padding: 0 8px;
 }
 
-select {
+select,
+.formula-display {
   width: 100%;
   min-width: 0;
   min-height: 34px;
@@ -227,7 +243,41 @@ select {
   padding: 0 10px;
 }
 
+.formula-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.formula-display {
+  resize: vertical;
+  padding: 8px 10px;
+  line-height: 1.4;
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.formula-display[readonly] {
+  cursor: text;
+}
+
+#btnCopyFormula {
+  min-width: 60px;
+  min-height: 42px;
+  align-self: start;
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
 select:focus-visible {
+  border-color: rgba(125, 240, 192, 0.75);
+  outline: none;
+}
+
+.formula-display:focus-visible {
   border-color: rgba(125, 240, 192, 0.75);
   outline: none;
 }
@@ -320,6 +370,150 @@ button.active {
   background: rgba(125, 240, 192, 0.16);
 }
 
+.tour-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.tour-header,
+.tour-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tour-header strong,
+.tour-card-head strong {
+  font-size: 0.86rem;
+}
+
+#tourMeta,
+#tourStopIndex {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.tour-select-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tour-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tour-note {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.tour-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inspector-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.inspector-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#inspectorBackend {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.inspector-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inspector-grid div {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.inspector-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.inspector-grid strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.inspector-summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.compare-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.compare-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.compare-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compare-summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
 .tips {
   position: absolute;
   right: 20px;
@@ -367,8 +561,30 @@ button.active {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  label {
+  .control-grid > label,
+  .formula-row {
     grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .tour-select-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .compare-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .inspector-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .formula-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #btnCopyFormula {
+    width: 100%;
+    min-height: 34px;
   }
 
   .buttons {

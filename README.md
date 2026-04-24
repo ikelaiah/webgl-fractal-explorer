@@ -53,7 +53,7 @@ An interactive 2D fractal playground that runs entirely in the browser. It uses 
 Additional controls in the HUD panel:
 
 - **Fractal** — dropdown selector, grouped by category
-- **Iterations** — 32–1024, step 8
+- **Iterations** — 32–512, step 8
 - **Color** — palette cycle offset
 - **Tone** — cosine palette, monotone, or duotone coloring
 - **Parameter** — Julia angle slider (for parameterised Julia sets)

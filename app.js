@@ -91,6 +91,8 @@ const ui = {
   iterReadout: document.getElementById("iterReadout"),
   modeReadout: document.getElementById("modeReadout"),
   fractalSelect: document.getElementById("fractalSelect"),
+  compareDivider: document.getElementById("compareDivider"),
+  formulaDisplay: document.getElementById("formulaDisplay"),
   iterations:  document.getElementById("iterations"),
   colorStyle:  document.getElementById("colorStyle"),
   colorCycle:  document.getElementById("colorCycle"),
@@ -106,7 +108,31 @@ const ui = {
   btnColorMode: document.getElementById("btnColorMode"),
   btnRefine:   document.getElementById("btnRefine"),
   btnReset:    document.getElementById("btnReset"),
+  btnExport:   document.getElementById("btnExport"),
+  btnCopyFormula: document.getElementById("btnCopyFormula"),
   btnShare:    document.getElementById("btnShare"),
+  btnCompareToggle: document.getElementById("btnCompareToggle"),
+  compareFractalSelect: document.getElementById("compareFractalSelect"),
+  compareColorStyle: document.getElementById("compareColorStyle"),
+  btnComparePalette: document.getElementById("btnComparePalette"),
+  btnCompareColorMode: document.getElementById("btnCompareColorMode"),
+  compareSummary: document.getElementById("compareSummary"),
+  tourMeta:    document.getElementById("tourMeta"),
+  tourSelect:  document.getElementById("tourSelect"),
+  tourStopTitle: document.getElementById("tourStopTitle"),
+  tourStopIndex: document.getElementById("tourStopIndex"),
+  tourStopNote: document.getElementById("tourStopNote"),
+  btnTourPrev: document.getElementById("btnTourPrev"),
+  btnTourPlay: document.getElementById("btnTourPlay"),
+  btnTourNext: document.getElementById("btnTourNext"),
+  inspectorBackend: document.getElementById("inspectorBackend"),
+  inspectX: document.getElementById("inspectX"),
+  inspectY: document.getElementById("inspectY"),
+  inspectZoom: document.getElementById("inspectZoom"),
+  inspectIter: document.getElementById("inspectIter"),
+  inspectMode: document.getElementById("inspectMode"),
+  inspectFamily: document.getElementById("inspectFamily"),
+  inspectSummary: document.getElementById("inspectSummary"),
   btnHideHud:  document.getElementById("btnHideHud"),
   btnShowHud:  document.getElementById("btnShowHud"),
   iterValue:   document.getElementById("iterValue"),
@@ -128,6 +154,7 @@ FRACTALS.forEach((fractal, idx) => {
   option.value = String(idx);
   option.textContent = fractal.name;
   group.appendChild(option);
+  ui.compareFractalSelect.appendChild(option.cloneNode(true));
 });
 const fractalNavOrder = Array.from(fractalOptionGroups.values())
   .flatMap(group => Array.from(group.children, option => parseInt(option.value, 10)));
@@ -135,9 +162,11 @@ const fractalNavOrder = Array.from(fractalOptionGroups.values())
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "fractal2d_v1";
+const LEGACY_VIEWS_STORAGE_KEY = STORAGE_KEY + "_views";
+const SESSION_SCHEMA_VERSION = 2;
 const MIN_ITER = 32;
-const MAX_ITER = 1024;
-const DEFAULT_ITER = 256;
+const MAX_ITER = 512;
+const DEFAULT_ITER = 64;
 const CAMERA_EASE = 12;
 const CAMERA_SETTLE_EPS = 32 * Number.EPSILON;
 const RESET_VIEW_PADDING = 1.08;
@@ -146,8 +175,9 @@ const CPU_DPR = Math.min(window.devicePixelRatio || 1, 2);
 const CPU_FRAME_BUDGET_MS = 10;
 const CPU_REFINE_DELAY_MS = 180;
 const CPU_PASSES = [4, 2, 1];
-const CPU_MAX_WORKERS = 8;
-const CPU_WORKER_COUNT_OVERRIDE = 8;
+const CPU_RESERVED_LOGICAL_CORES = 2;
+const CPU_FALLBACK_LOGICAL_CORES = 4;
+const CPU_MAX_WORKERS = 30;
 const CPU_WORKER_BATCH_BLOCKS = 16384;
 const CPU_PREVIEW_ZOOM_THRESHOLD = 1e4;
 const COLOR_MODE_ESCAPE = 0;
@@ -155,6 +185,8 @@ const COLOR_MODE_BASIN = 1;
 const COLOR_STYLE_PALETTE = 0;
 const COLOR_STYLE_MONOTONE = 1;
 const COLOR_STYLE_DUOTONE = 2;
+const TOUR_ADVANCE_DELAY_MS = 3200;
+const TOUR_STOP_SETTLE_MS = 700;
 
 const state = {
   // Camera movement uses a current value plus a target value. Input changes the
@@ -177,7 +209,116 @@ const state = {
   fpsTime: performance.now(),
   lastTime: performance.now(),
   juliaParams: {},
+  savedViews: {},
+  compare: {
+    enabled: false,
+    lockCamera: true,
+    fractalIdx: 0,
+    palette: 0,
+    colorMode: COLOR_MODE_ESCAPE,
+    colorStyle: COLOR_STYLE_PALETTE,
+  },
+  tour: {
+    id: "",
+    stop: 0,
+    playing: false,
+  },
 };
+
+const TOURS = Object.freeze([
+  {
+    id: "mandelbrot-classics",
+    name: "Mandelbrot Essentials",
+    stops: [
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Mandelbrot Set"),
+        cx: -0.5, cy: 0.0, ps: 0.004725,
+        iterations: 64, colorCycle: 0.18, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Whole Set",
+        note: "Start with the full silhouette before diving into repeated edge structure.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Mandelbrot Set"),
+        cx: -0.743643887037151, cy: 0.13182590420533, ps: 3.2e-6,
+        iterations: 448, colorCycle: 0.42, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Seahorse Valley",
+        note: "A classic stop where spirals and branching filaments make self-similarity easy to read.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Mandelbrot Set"),
+        cx: -1.25066, cy: 0.02012, ps: 7.8e-6,
+        iterations: 512, colorCycle: 0.66, colorStyle: COLOR_STYLE_DUOTONE,
+        title: "Elephant Valley",
+        note: "This edge region packs dense tendrils into a narrow band and rewards slower inspection.",
+      },
+    ],
+  },
+  {
+    id: "burning-ship-contrast",
+    name: "Burning Ship Highlights",
+    stops: [
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Burning Ship"),
+        cx: -0.5, cy: -0.5, ps: 0.004725,
+        iterations: 96, colorCycle: 0.12, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Whole Ship",
+        note: "The overall outline already shows how the absolute-value fold changes the family compared with Mandelbrot.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Burning Ship"),
+        cx: -1.7443359375, cy: -0.017451171875, ps: 3.7e-6,
+        iterations: 480, colorCycle: 0.54, colorStyle: COLOR_STYLE_DUOTONE,
+        title: "Embroidery Edge",
+        note: "Layered folds create a harsher, more architectural boundary than the smoother Mandelbrot filaments.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Burning Ship"),
+        cx: -1.769383179, cy: -0.04531251, ps: 1.8e-6,
+        iterations: 512, colorCycle: 0.88, colorStyle: COLOR_STYLE_MONOTONE,
+        title: "Needle Cluster",
+        note: "A stop chosen for the vertical shard growth that gives the Burning Ship its recognizable silhouette.",
+      },
+    ],
+  },
+  {
+    id: "newton-basins",
+    name: "Newton Basin Tour",
+    stops: [
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Newton Cubic Basins"),
+        cx: 0.0, cy: 0.0, ps: 0.00459,
+        iterations: 192, colorMode: COLOR_MODE_BASIN, colorCycle: 0, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Root Territories",
+        note: "Begin with the clear three-way split before zooming into the unstable basin boundaries.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Nova Basins"),
+        cx: -0.15, cy: 0.05, ps: 0.0024,
+        iterations: 256, colorMode: COLOR_MODE_BASIN, colorCycle: 0.27, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Nova Bloom",
+        note: "Nova adds richer filaments and makes the solver dynamics feel less rigid than plain Newton.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Halley Cubic Basins"),
+        cx: 0.0, cy: 0.0, ps: 0.0032,
+        iterations: 240, colorMode: COLOR_MODE_BASIN, colorCycle: 0.61, colorStyle: COLOR_STYLE_DUOTONE,
+        title: "Halley Boundary",
+        note: "Halley sharpens the attraction boundaries and makes the basin transitions feel almost crystalline.",
+      },
+    ],
+  },
+]);
+const TOUR_MAP = new Map(TOURS.map(tour => [tour.id, tour]));
+const tourPlayback = {
+  lastSettledAt: 0,
+  lastAdvancedAt: 0,
+};
+TOURS.forEach(tour => {
+  const option = document.createElement("option");
+  option.value = tour.id;
+  option.textContent = tour.name;
+  ui.tourSelect.appendChild(option);
+});
 
 const activePointers = new Map();
 const gesture = {
@@ -191,6 +332,220 @@ function normalizeColorStyle(value) {
   const parsed = parseInt(value, 10);
   if (parsed === COLOR_STYLE_MONOTONE || parsed === COLOR_STYLE_DUOTONE) return parsed;
   return COLOR_STYLE_PALETTE;
+}
+
+function clampFractalIndex(value) {
+  return Math.max(0, Math.min(parseInt(value, 10) || 0, FRACTALS.length - 1));
+}
+
+function parseStoredJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function cloneViewsMap(views) {
+  const result = {};
+  if (!views || typeof views !== "object") return result;
+  for (const [key, value] of Object.entries(views)) {
+    if (!value || typeof value !== "object") continue;
+    const cx = parseFloat(value.cx);
+    const cy = parseFloat(value.cy);
+    const ps = parseFloat(value.ps);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(ps) || ps <= 0) continue;
+    result[key] = { cx, cy, ps };
+  }
+  return result;
+}
+
+function buildSessionSnapshot() {
+  // Keep one explicit session object so future features such as compare mode,
+  // tours, and richer sharing can reuse the same schema instead of inventing
+  // parallel storage formats.
+  return {
+    version: SESSION_SCHEMA_VERSION,
+    active: {
+      fractalIdx: state.fractalIdx,
+      palette: state.palette,
+      colorMode: state.colorMode,
+      colorStyle: state.colorStyle,
+      cpuRefine: state.cpuRefine,
+      view: {
+        cx: state.targetCenterX,
+        cy: state.targetCenterY,
+        ps: state.targetPixelScale,
+      },
+      controls: {
+        iterations: parseInt(ui.iterations.value, 10) || DEFAULT_ITER,
+        colorCycle: parseFloat(ui.colorCycle.value) || 0,
+        juliaAngle: parseFloat(ui.juliaAngle.value) || 0,
+      },
+      juliaParams: state.juliaParams,
+    },
+    views: cloneViewsMap(state.savedViews),
+    compare: {
+      enabled: !!state.compare.enabled,
+      lockCamera: state.compare.lockCamera !== false,
+      fractalIdx: clampFractalIndex(state.compare.fractalIdx),
+      palette: Math.max(0, Math.min(parseInt(state.compare.palette, 10) || 0, 4)),
+      colorMode: parseInt(state.compare.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
+      colorStyle: normalizeColorStyle(state.compare.colorStyle),
+    },
+    tour: {
+      id: typeof state.tour.id === "string" ? state.tour.id : "",
+      stop: Math.max(0, parseInt(state.tour.stop, 10) || 0),
+      playing: !!state.tour.playing,
+    },
+  };
+}
+
+function applySessionSnapshot(snapshot, options = {}) {
+  const data = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const active = data.active && typeof data.active === "object" ? data.active : data;
+  const controls = active.controls && typeof active.controls === "object" ? active.controls : active;
+  const view = active.view && typeof active.view === "object"
+    ? active.view
+    : { cx: active.cx, cy: active.cy, ps: active.ps };
+  const compare = data.compare && typeof data.compare === "object" ? data.compare : {};
+  const tour = data.tour && typeof data.tour === "object" ? data.tour : {};
+
+  if (active.fractalIdx !== undefined) state.fractalIdx = clampFractalIndex(active.fractalIdx);
+  if (active.palette !== undefined) state.palette = Math.max(0, Math.min(parseInt(active.palette, 10) || 0, 4));
+  if (active.colorMode !== undefined) {
+    state.colorMode = parseInt(active.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE;
+  }
+  if (active.colorStyle !== undefined) state.colorStyle = normalizeColorStyle(active.colorStyle);
+  if (active.cpuRefine !== undefined) state.cpuRefine = !!active.cpuRefine;
+  if (controls.iterations !== undefined) {
+    ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(controls.iterations, 10) || DEFAULT_ITER, MAX_ITER));
+  }
+  if (controls.colorCycle !== undefined) ui.colorCycle.value = String(controls.colorCycle);
+  if (controls.juliaAngle !== undefined) ui.juliaAngle.value = String(controls.juliaAngle);
+  if (active.juliaParams && typeof active.juliaParams === "object") state.juliaParams = active.juliaParams;
+  if (view.cx !== undefined) state.centerX = parseFloat(view.cx) || 0;
+  if (view.cy !== undefined) state.centerY = parseFloat(view.cy) || 0;
+  if (view.ps !== undefined) state.pixelScale = parseFloat(view.ps) || 0;
+
+  state.savedViews = cloneViewsMap(data.views);
+  state.compare = {
+    enabled: !!compare.enabled,
+    lockCamera: compare.lockCamera !== false,
+    fractalIdx: clampFractalIndex(compare.fractalIdx),
+    palette: Math.max(0, Math.min(parseInt(compare.palette, 10) || 0, 4)),
+    colorMode: parseInt(compare.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
+    colorStyle: normalizeColorStyle(compare.colorStyle),
+  };
+  state.tour = {
+    id: typeof tour.id === "string" ? tour.id : "",
+    stop: Math.max(0, parseInt(tour.stop, 10) || 0),
+    playing: !!tour.playing,
+  };
+
+  if (!options.skipSyncTarget) syncTargetToCurrent();
+}
+
+function buildShareStateSnapshot() {
+  const session = buildSessionSnapshot();
+  return {
+    version: session.version,
+    active: session.active,
+    compare: session.compare,
+    tour: session.tour,
+  };
+}
+
+function sessionSnapshotToParams(snapshot) {
+  // Version the share schema now so compare mode and tours can extend it later
+  // without breaking older links.
+  const active = snapshot.active || {};
+  const view = active.view || {};
+  const controls = active.controls || {};
+  const params = new URLSearchParams({
+    sv: String(snapshot.version || SESSION_SCHEMA_VERSION),
+    f: String(active.fractalIdx ?? 0),
+    pa: String(active.palette ?? 0),
+    cm: String(active.colorMode ?? COLOR_MODE_ESCAPE),
+    cs: String(active.colorStyle ?? COLOR_STYLE_PALETTE),
+    cx: Number(view.cx || 0).toFixed(15),
+    cy: Number(view.cy || 0).toFixed(15),
+    ps: Number(view.ps || 0).toExponential(6),
+    it: String(controls.iterations ?? DEFAULT_ITER),
+    cc: String(controls.colorCycle ?? 0),
+    ja: String(controls.juliaAngle ?? 0),
+  });
+  if (active.juliaParams && FRACTALS[clampFractalIndex(active.fractalIdx)].juliaParam) {
+    const fixed = active.juliaParams[active.fractalIdx];
+    if (Array.isArray(fixed) && fixed.length >= 2) {
+      params.set("jr", Number(fixed[0]).toFixed(6));
+      params.set("ji", Number(fixed[1]).toFixed(6));
+    }
+  }
+  if (snapshot.compare && snapshot.compare.enabled) {
+    params.set("cmp", "1");
+    params.set("clf", String(snapshot.compare.fractalIdx));
+    params.set("clp", String(snapshot.compare.palette));
+    params.set("clm", String(snapshot.compare.colorMode));
+    params.set("cls", String(snapshot.compare.colorStyle));
+    if (snapshot.compare.lockCamera === false) params.set("clock", "0");
+  }
+  if (snapshot.tour && snapshot.tour.id) {
+    params.set("tour", snapshot.tour.id);
+    params.set("stop", String(snapshot.tour.stop));
+  }
+  return params.toString();
+}
+
+function paramsToSessionSnapshot(search) {
+  const p = new URLSearchParams(search);
+  if (![...p.keys()].length) return null;
+
+  const fractalIdx = p.has("f") ? clampFractalIndex(p.get("f")) : 0;
+  const snapshot = {
+    version: parseInt(p.get("sv"), 10) || 1,
+    active: {
+      fractalIdx,
+      palette: p.has("pa") ? Math.max(0, Math.min(parseInt(p.get("pa"), 10) || 0, 4)) : 0,
+      colorMode: p.has("cm") && parseInt(p.get("cm"), 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
+      colorStyle: p.has("cs") ? normalizeColorStyle(p.get("cs")) : COLOR_STYLE_PALETTE,
+      view: {
+        cx: p.has("cx") ? (parseFloat(p.get("cx")) || 0) : undefined,
+        cy: p.has("cy") ? (parseFloat(p.get("cy")) || 0) : undefined,
+        ps: p.has("ps") ? (parseFloat(p.get("ps")) || 0) : undefined,
+      },
+      controls: {
+        iterations: p.has("it") ? Math.max(MIN_ITER, Math.min(parseInt(p.get("it"), 10) || DEFAULT_ITER, MAX_ITER)) : DEFAULT_ITER,
+        colorCycle: p.has("cc") ? p.get("cc") : 0,
+        juliaAngle: p.has("ja") ? p.get("ja") : 0,
+      },
+      juliaParams: {},
+    },
+    compare: {
+      enabled: p.get("cmp") === "1",
+      lockCamera: p.get("clock") !== "0",
+      fractalIdx: p.has("clf") ? clampFractalIndex(p.get("clf")) : fractalIdx,
+      palette: p.has("clp") ? Math.max(0, Math.min(parseInt(p.get("clp"), 10) || 0, 4)) : 0,
+      colorMode: p.has("clm") && parseInt(p.get("clm"), 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
+      colorStyle: p.has("cls") ? normalizeColorStyle(p.get("cls")) : COLOR_STYLE_PALETTE,
+    },
+    tour: {
+      id: p.get("tour") || "",
+      stop: Math.max(0, parseInt(p.get("stop"), 10) || 0),
+      playing: false,
+    },
+    views: {},
+  };
+
+  if (p.has("jr") && p.has("ji") && FRACTALS[fractalIdx].juliaParam) {
+    const jr = parseFloat(p.get("jr"));
+    const ji = parseFloat(p.get("ji"));
+    if (Number.isFinite(jr) && Number.isFinite(ji)) {
+      snapshot.active.juliaParams[fractalIdx] = [clampJuliaParam(jr), clampJuliaParam(ji)];
+    }
+  }
+  return snapshot;
 }
 
 let minimapDirty = true;
@@ -309,60 +664,60 @@ function nudgeCamera(dt) {
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 function saveSettings() {
-  // Global settings and per-fractal views are stored separately so switching
-  // formulas restores each fractal's last interesting location.
+  // Persist one session blob so upcoming features can share the same storage
+  // contract instead of maintaining separate per-feature keys.
   try {
-    const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    views[state.fractalIdx] = { cx: state.targetCenterX, cy: state.targetCenterY, ps: state.targetPixelScale };
-    localStorage.setItem(STORAGE_KEY + "_views", JSON.stringify(views));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      fractalIdx: state.fractalIdx,
-      palette:    state.palette,
-      colorMode:  state.colorMode,
-      colorStyle: state.colorStyle,
-      iterations: ui.iterations.value,
-      colorCycle: ui.colorCycle.value,
-      juliaAngle: ui.juliaAngle.value,
-      cpuRefine: state.cpuRefine,
-      juliaParams: state.juliaParams,
-    }));
+    saveViewForCurrentFractal();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSessionSnapshot()));
   } catch { /* quota */ }
 }
 
 function loadSettings() {
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    if (s.fractalIdx !== undefined) state.fractalIdx = Math.max(0, Math.min(parseInt(s.fractalIdx, 10) || 0, FRACTALS.length - 1));
-    if (s.palette    !== undefined) state.palette    = Math.max(0, Math.min(parseInt(s.palette, 10) || 0, 4));
-    if (s.colorMode  !== undefined) state.colorMode  = parseInt(s.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE;
-    if (s.colorStyle !== undefined) state.colorStyle = normalizeColorStyle(s.colorStyle);
-    if (s.iterations) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(s.iterations, 10) || DEFAULT_ITER, MAX_ITER));
-    if (s.colorCycle) ui.colorCycle.value = s.colorCycle;
-    if (s.juliaAngle) ui.juliaAngle.value = s.juliaAngle;
-    if (s.cpuRefine !== undefined) state.cpuRefine = !!s.cpuRefine;
-    if (s.juliaParams && typeof s.juliaParams === "object") state.juliaParams = s.juliaParams;
-    const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    const v = views[state.fractalIdx];
-    if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
-    else resetView(state.fractalIdx);
+    const session = parseStoredJson(STORAGE_KEY, null);
+    if (session && typeof session === "object" && (session.version || session.active || session.views)) {
+      applySessionSnapshot(session, { skipSyncTarget: true });
+    } else {
+      // Legacy migration path from the pre-session schema.
+      const legacySettings = session && typeof session === "object" ? session : {};
+      const legacyViews = parseStoredJson(LEGACY_VIEWS_STORAGE_KEY, {});
+      applySessionSnapshot({
+        version: 1,
+        active: {
+          fractalIdx: legacySettings.fractalIdx,
+          palette: legacySettings.palette,
+          colorMode: legacySettings.colorMode,
+          colorStyle: legacySettings.colorStyle,
+          cpuRefine: legacySettings.cpuRefine,
+          view: legacyViews[legacySettings.fractalIdx],
+          controls: {
+            iterations: legacySettings.iterations,
+            colorCycle: legacySettings.colorCycle,
+            juliaAngle: legacySettings.juliaAngle,
+          },
+          juliaParams: legacySettings.juliaParams,
+        },
+        views: legacyViews,
+      }, { skipSyncTarget: true });
+    }
+    const savedView = state.savedViews[state.fractalIdx];
+    if (savedView) setCameraTarget(savedView.cx, savedView.cy, savedView.ps, true);
+    else if (!state.pixelScale) resetView(state.fractalIdx);
   } catch { /* ignore */ }
 }
 
 function saveViewForCurrentFractal() {
-  try {
-    const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    views[state.fractalIdx] = { cx: state.targetCenterX, cy: state.targetCenterY, ps: state.targetPixelScale };
-    localStorage.setItem(STORAGE_KEY + "_views", JSON.stringify(views));
-  } catch { /* quota */ }
+  state.savedViews[state.fractalIdx] = {
+    cx: state.targetCenterX,
+    cy: state.targetCenterY,
+    ps: state.targetPixelScale,
+  };
 }
 
 function restoreViewForFractal(idx) {
   resetView(idx);
-  try {
-    const views = JSON.parse(localStorage.getItem(STORAGE_KEY + "_views") || "{}");
-    const v = views[idx];
-    if (v) setCameraTarget(v.cx, v.cy, v.ps, true);
-  } catch { /* ignore */ }
+  const view = state.savedViews[idx];
+  if (view) setCameraTarget(view.cx, view.cy, view.ps, true);
   markMinimapDirty();
 }
 
@@ -371,47 +726,108 @@ function restoreViewForFractal(idx) {
 function stateToParams() {
   // Share links intentionally encode the target camera, not the eased current
   // camera, so copied links match where the user is navigating.
-  const params = new URLSearchParams({
-    f:  state.fractalIdx,
-    pa: state.palette,
-    cm: state.colorMode,
-    cs: state.colorStyle,
-    cx: state.targetCenterX.toFixed(15),
-    cy: state.targetCenterY.toFixed(15),
-    ps: state.targetPixelScale.toExponential(6),
-    it: ui.iterations.value,
-    cc: ui.colorCycle.value,
-    ja: ui.juliaAngle.value,
-  });
-  if (FRACTALS[state.fractalIdx].juliaParam) {
-    const [jr, ji] = getRenderJuliaC();
-    params.set("jr", jr.toFixed(6));
-    params.set("ji", ji.toFixed(6));
-  }
-  return params.toString();
+  return sessionSnapshotToParams(buildShareStateSnapshot());
 }
 
 function loadFromParams() {
-  const p = new URLSearchParams(window.location.search);
-  if (p.has("f"))  state.fractalIdx = Math.max(0, Math.min(parseInt(p.get("f"), 10) || 0, FRACTALS.length - 1));
-  if (p.has("pa")) state.palette    = Math.max(0, Math.min(parseInt(p.get("pa"), 10) || 0, 4));
-  if (p.has("cm")) state.colorMode  = parseInt(p.get("cm"), 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE;
-  if (p.has("cs")) state.colorStyle = normalizeColorStyle(p.get("cs"));
-  if (p.has("cx")) state.centerX    = parseFloat(p.get("cx")) || 0;
-  if (p.has("cy")) state.centerY    = parseFloat(p.get("cy")) || 0;
-  if (p.has("ps")) state.pixelScale = parseFloat(p.get("ps")) || 0;
-  if (p.has("it")) ui.iterations.value = Math.max(MIN_ITER, Math.min(parseInt(p.get("it"), 10) || DEFAULT_ITER, MAX_ITER));
-  if (p.has("cc")) ui.colorCycle.value = p.get("cc");
-  if (p.has("ja")) ui.juliaAngle.value = p.get("ja");
-  if (p.has("jr") && p.has("ji") && FRACTALS[state.fractalIdx].juliaParam) {
-    const jr = parseFloat(p.get("jr"));
-    const ji = parseFloat(p.get("ji"));
-    if (Number.isFinite(jr) && Number.isFinite(ji)) {
-      state.juliaParams[state.fractalIdx] = [clampJuliaParam(jr), clampJuliaParam(ji)];
-    }
-  }
+  const snapshot = paramsToSessionSnapshot(window.location.search);
+  if (!snapshot) return;
+  applySessionSnapshot(snapshot, { skipSyncTarget: true });
   syncTargetToCurrent();
   markMinimapDirty();
+}
+
+function getActiveTour() {
+  return TOUR_MAP.get(state.tour.id) || null;
+}
+
+function getActiveTourStop() {
+  const tour = getActiveTour();
+  if (!tour || !tour.stops.length) return null;
+  const index = Math.max(0, Math.min(state.tour.stop, tour.stops.length - 1));
+  return tour.stops[index];
+}
+
+function getCompareFractal() {
+  return FRACTALS[clampFractalIndex(state.compare.fractalIdx)] || FRACTALS[0];
+}
+
+function stopTourPlayback(save = true) {
+  if (!state.tour.playing) return;
+  state.tour.playing = false;
+  if (save) saveSettings();
+}
+
+function applyTourStop(index, options = {}) {
+  const tour = getActiveTour();
+  if (!tour || !tour.stops.length) return;
+  const stopIndex = Math.max(0, Math.min(index, tour.stops.length - 1));
+  const stop = tour.stops[stopIndex];
+  state.tour.stop = stopIndex;
+  tourPlayback.lastSettledAt = 0;
+  tourPlayback.lastAdvancedAt = performance.now();
+
+  if (stop.fractalIdx !== state.fractalIdx) {
+    selectFractal(stop.fractalIdx, { preserveTour: true });
+  }
+  setCameraTarget(stop.cx, stop.cy, stop.ps, options.immediate === true);
+  markMinimapDirty();
+  markDeepDirty(true);
+  if (!options.skipSave) saveSettings();
+}
+
+function selectTour(tourId, options = {}) {
+  if (!tourId || !TOUR_MAP.has(tourId)) {
+    state.tour.id = "";
+    state.tour.stop = 0;
+    stopTourPlayback(false);
+    ui.tourSelect.value = "";
+    if (!options.skipSave) saveSettings();
+    return;
+  }
+  state.tour.id = tourId;
+  state.tour.stop = Math.max(0, Math.min(options.stop ?? state.tour.stop, TOUR_MAP.get(tourId).stops.length - 1));
+  if (!options.keepPlaying) state.tour.playing = false;
+  ui.tourSelect.value = tourId;
+  applyTourStop(state.tour.stop, { immediate: options.immediate, skipSave: options.skipSave });
+}
+
+function stepTour(direction) {
+  const tour = getActiveTour();
+  if (!tour || !tour.stops.length) return;
+  const nextIndex = (state.tour.stop + direction + tour.stops.length) % tour.stops.length;
+  applyTourStop(nextIndex);
+}
+
+function toggleTourPlayback() {
+  const tour = getActiveTour();
+  if (!tour || tour.stops.length < 2) return;
+  state.tour.playing = !state.tour.playing;
+  if (state.tour.playing) {
+    tourPlayback.lastSettledAt = 0;
+    tourPlayback.lastAdvancedAt = performance.now();
+  }
+  saveSettings();
+}
+
+function updateTourPlayback(now) {
+  if (!state.tour.playing) return;
+  const tour = getActiveTour();
+  if (!tour || tour.stops.length < 2) {
+    stopTourPlayback();
+    return;
+  }
+  if (!isCameraSettled() || state.dragging || activePointers.size) {
+    tourPlayback.lastSettledAt = 0;
+    return;
+  }
+  if (!tourPlayback.lastSettledAt) {
+    tourPlayback.lastSettledAt = now;
+    return;
+  }
+  if (now - tourPlayback.lastSettledAt < TOUR_STOP_SETTLE_MS) return;
+  if (now - tourPlayback.lastAdvancedAt < TOUR_ADVANCE_DELAY_MS) return;
+  stepTour(1);
 }
 
 // ─── Resize ───────────────────────────────────────────────────────────────────
@@ -437,12 +853,22 @@ function resize() {
 function renderViewport() {
   // Converts the active camera into the world-space rectangle used by both GPU
   // uniforms and CPU refinement snapshots.
-  const width = Math.max(canvas.width, 1);
-  const height = Math.max(canvas.height, 1);
-  const worldWidth = width * state.pixelScale;
-  const worldHeight = height * state.pixelScale;
-  const x0 = state.centerX - worldWidth * 0.5;
-  const y0 = state.centerY - worldHeight * 0.5;
+  return renderViewportForView({
+    width: canvas.width,
+    height: canvas.height,
+    centerX: state.centerX,
+    centerY: state.centerY,
+    pixelScale: state.pixelScale,
+  });
+}
+
+function renderViewportForView(view) {
+  const width = Math.max(view.width, 1);
+  const height = Math.max(view.height, 1);
+  const worldWidth = width * view.pixelScale;
+  const worldHeight = height * view.pixelScale;
+  const x0 = view.centerX - worldWidth * 0.5;
+  const y0 = view.centerY - worldHeight * 0.5;
   return {
     width,
     height,
@@ -498,8 +924,16 @@ function syncJuliaParamInputs() {
 
 function updateUI() {
   const f = FRACTALS[state.fractalIdx];
+  const tour = getActiveTour();
+  const stop = getActiveTourStop();
+  const compareFractal = getCompareFractal();
+  const compareSupportsBasin = (compareFractal.meta.colorModes || []).includes("basin");
   ui.fractalName.textContent = f.name;
   ui.fractalSelect.value = String(state.fractalIdx);
+  ui.compareFractalSelect.value = String(compareFractal ? FRACTALS.indexOf(compareFractal) : 0);
+  ui.compareColorStyle.value = String(state.compare.colorStyle);
+  ui.formulaDisplay.value = getActiveFormulaText(f);
+  ui.tourSelect.value = tour ? tour.id : "";
   ui.colorStyle.value = String(state.colorStyle);
   ui.juliaRow.style.display  = f.julia ? "" : "none";
   ui.fixedJuliaRow.style.display = f.juliaParam ? "" : "none";
@@ -507,14 +941,48 @@ function updateUI() {
   ui.iterReadout.textContent = getRenderIterations();
   ui.modeReadout.textContent = getRenderModeLabel();
   ui.btnRefine.textContent = state.cpuRefine ? "Refine ON" : "Refine";
+  ui.btnRefine.title = state.cpuRefine
+    ? `Toggle CPU refinement (${getCpuWorkerCount()} workers on this device)`
+    : "Toggle CPU refinement";
   ui.btnRefine.classList.toggle("active", state.cpuRefine);
+  ui.btnRefine.disabled = state.compare.enabled;
   ui.btnPalette.textContent = state.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
+  if (!compareSupportsBasin && state.compare.colorMode === COLOR_MODE_BASIN) state.compare.colorMode = COLOR_MODE_ESCAPE;
   ui.btnColorMode.disabled = !supportsBasinMode;
   ui.btnColorMode.textContent = state.colorMode === COLOR_MODE_BASIN ? "Basin" : "Escape";
   ui.btnColorMode.classList.toggle("active", state.colorMode === COLOR_MODE_BASIN);
   ui.zoomReadout.textContent = formatZoom(getZoom());
+  ui.tourMeta.textContent = tour ? `${tour.stops.length} stops` : "No tour selected";
+  ui.tourStopTitle.textContent = stop ? stop.title : "Pick a tour";
+  ui.tourStopIndex.textContent = tour ? `${state.tour.stop + 1} / ${tour.stops.length}` : "0 / 0";
+  ui.tourStopNote.textContent = stop
+    ? stop.note
+    : "Curated routes will guide you through interesting regions and keep the current stop shareable.";
+  ui.btnTourPrev.disabled = !tour;
+  ui.btnTourNext.disabled = !tour;
+  ui.btnTourPlay.disabled = !tour || tour.stops.length < 2;
+  ui.btnTourPlay.textContent = state.tour.playing ? "Pause" : "Play";
+  ui.btnTourPlay.classList.toggle("active", state.tour.playing);
+  ui.inspectorBackend.textContent = getRenderModeLabel();
+  ui.inspectX.textContent = formatCoordinate(state.targetCenterX);
+  ui.inspectY.textContent = formatCoordinate(state.targetCenterY);
+  ui.inspectZoom.textContent = formatZoom(getZoom());
+  ui.inspectIter.textContent = String(getRenderIterations());
+  ui.inspectMode.textContent = getInspectorModeLabel(f);
+  ui.inspectFamily.textContent = f.category;
+  ui.inspectSummary.textContent = getInspectorSummary(f, stop);
+  ui.compareDivider.hidden = !state.compare.enabled;
+  ui.btnCompareToggle.textContent = state.compare.enabled ? "On" : "Off";
+  ui.btnCompareToggle.classList.toggle("active", state.compare.enabled);
+  ui.btnComparePalette.textContent = state.compare.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
+  ui.btnCompareColorMode.disabled = !compareSupportsBasin;
+  ui.btnCompareColorMode.textContent = state.compare.colorMode === COLOR_MODE_BASIN ? "Basin" : "Escape";
+  ui.btnCompareColorMode.classList.toggle("active", state.compare.colorMode === COLOR_MODE_BASIN);
+  ui.compareSummary.textContent = state.compare.enabled
+    ? `Left: ${f.name}. Right: ${compareFractal.name}. Shared camera, split-screen GPU compare. CPU refine is paused while compare is active.`
+    : "Split-screen compare uses the same camera on both halves so formulas and coloring can be judged directly.";
 }
 
 function formatZoom(zoom) {
@@ -526,12 +994,97 @@ function formatZoom(zoom) {
 }
 
 function getRenderModeLabel() {
+  if (state.compare.enabled) return "GPU Split";
   if (!state.cpuRefine || !deepCtx) return "GPU";
   if (cpuRender.running) return cpuRender.useWorkers
-    ? `x${cpuRender.workers.length} CPU`
+    ? `CPU x${cpuRender.workers.length}`
     : "CPU...";
   if (cpuRender.complete && !cpuRender.dirty) return "CPU";
   return "GPU";
+}
+
+function formatCoordinate(value) {
+  const abs = Math.abs(value);
+  if (!Number.isFinite(value)) return "0";
+  if (abs >= 1000 || (abs > 0 && abs < 1e-4)) return value.toExponential(6).replace("+", "");
+  return value.toFixed(9).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatJuliaComponent(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1000) return value.toExponential(2);
+  if (abs >= 1) return value.toFixed(3);
+  return value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function getInspectorModeLabel(fractal = FRACTALS[state.fractalIdx]) {
+  if (fractal.meta.newton) {
+    return state.colorMode === COLOR_MODE_BASIN ? `Basins (${fractal.meta.basinRoots} roots)` : "Newton escape";
+  }
+  if (fractal.meta.orbitTrap) return "Orbit trap";
+  if (fractal.julia || fractal.juliaParam) return "Julia family";
+  return state.colorMode === COLOR_MODE_BASIN ? "Basin" : "Escape";
+}
+
+function getInspectorSummary(fractal = FRACTALS[state.fractalIdx], stop = getActiveTourStop()) {
+  const backend = getRenderModeLabel();
+  const base = fractal.explanationText || "This fractal uses iterative orbit behavior to separate stable and unstable regions.";
+  if (stop) {
+    return `${stop.note} Renderer: ${backend}. ${base}`;
+  }
+  return `${base} Renderer: ${backend}.`;
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "fractal";
+}
+
+function buildExportFilename() {
+  const fractal = FRACTALS[state.fractalIdx];
+  const tour = getActiveTour();
+  const stop = getActiveTourStop();
+  const parts = [
+    "fractals",
+    slugify(fractal.name),
+  ];
+  if (tour) parts.push(slugify(tour.name));
+  if (stop) parts.push(`stop-${state.tour.stop + 1}`);
+  parts.push(`zoom-${slugify(formatZoom(getZoom()))}`);
+  return parts.join("_") + ".png";
+}
+
+function exportCompositeCanvas() {
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const exportCtx = exportCanvas.getContext("2d", { alpha: false });
+  if (!exportCtx) return null;
+
+  exportCtx.fillStyle = "#020405";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  exportCtx.drawImage(canvas, 0, 0);
+
+  if (state.cpuRefine && deepCanvas.width && deepCanvas.height) {
+    exportCtx.drawImage(deepCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+  }
+  if (state.compare.enabled) {
+    const mid = Math.floor(exportCanvas.width * 0.5);
+    exportCtx.fillStyle = "rgba(125, 240, 192, 0.95)";
+    exportCtx.fillRect(Math.max(0, mid - 1), 0, 2, exportCanvas.height);
+  }
+  return exportCanvas;
+}
+
+function getActiveFormulaText(fractal = FRACTALS[state.fractalIdx]) {
+  const base = fractal.formulaText || "Formula metadata pending";
+  if (!fractal.julia && !fractal.juliaParam) return base;
+  const [real, imag] = getRenderJuliaC(FRACTALS.indexOf(fractal));
+  const imagSign = imag < 0 ? "-" : "+";
+  return `${base}\nc = ${formatJuliaComponent(real)} ${imagSign} ${formatJuliaComponent(Math.abs(imag))}i`;
 }
 
 function getZoom() {
@@ -543,6 +1096,37 @@ function getRenderIterations() {
   const zoom = Math.max(1, getZoom());
   const zoomBoost = Math.floor(Math.log2(zoom) * 32);
   return Math.max(MIN_ITER, Math.min(MAX_ITER, requested + zoomBoost));
+}
+
+function drawScene(scene, viewportRect) {
+  const { prog, loc } = getProgram(scene.fractalIdx);
+  const viewport = renderViewportForView({
+    width: viewportRect.width,
+    height: viewportRect.height,
+    centerX: scene.centerX,
+    centerY: scene.centerY,
+    pixelScale: scene.pixelScale,
+  });
+  const [x0Hi, x0Mid, x0Lo] = tsSplit(viewport.x0);
+  const [y0Hi, y0Mid, y0Lo] = tsSplit(viewport.y0);
+
+  gl.viewport(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+  gl.scissor(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.enableVertexAttribArray(loc.pos);
+  gl.vertexAttribPointer(loc.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(loc.res, viewport.width, viewport.height);
+  gl.uniform3f(loc.x0, x0Hi, x0Mid, x0Lo);
+  gl.uniform3f(loc.y0, y0Hi, y0Mid, y0Lo);
+  gl.uniform1f(loc.scale, viewport.pixelScale);
+  gl.uniform1i(loc.iter, scene.iterations);
+  gl.uniform1f(loc.palette, scene.palette);
+  gl.uniform1f(loc.cycle, scene.colorCycle);
+  gl.uniform2f(loc.juliaC, scene.juliaC[0], scene.juliaC[1]);
+  gl.uniform1i(loc.colorMode, scene.colorMode);
+  gl.uniform1i(loc.colorStyle, scene.colorStyle);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
 // ─── Minimap ─────────────────────────────────────────────────────────────────
@@ -1076,9 +1660,16 @@ function cancelCpuWorkers() {
 }
 
 function getCpuWorkerCount() {
-  if (CPU_WORKER_COUNT_OVERRIDE > 0) return Math.min(CPU_MAX_WORKERS, CPU_WORKER_COUNT_OVERRIDE);
-  const cores = navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(CPU_MAX_WORKERS, cores));
+  // `hardwareConcurrency` is only a browser hint, but it is the closest
+  // browser-safe signal we get for sizing worker pools automatically.
+  const reportedCores = Math.max(
+    1,
+    Math.floor(navigator.hardwareConcurrency || CPU_FALLBACK_LOGICAL_CORES)
+  );
+  const workerBudget = reportedCores > CPU_RESERVED_LOGICAL_CORES
+    ? reportedCores - CPU_RESERVED_LOGICAL_CORES
+    : 1;
+  return Math.max(1, Math.min(CPU_MAX_WORKERS, workerBudget));
 }
 
 function cpuWorkerSource() {
@@ -2192,6 +2783,7 @@ function processCpuRenderMain(generation) {
 function maybeStartCpuRender(now) {
   // Delay refinement until the camera and pointers are idle; otherwise the CPU
   // would waste time painting frames that are immediately invalidated.
+  if (state.compare.enabled) return;
   if (!state.cpuRefine || !deepCtx || !cpuRender.dirty) return;
   if (cpuRender.running && !cpuRender.previewOnly) return;
   if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
@@ -2291,12 +2883,18 @@ function switchFractal(direction = 1) {
   selectFractal(fractalNavOrder[nextNavIdx]);
 }
 
-function selectFractal(idx) {
+function selectFractal(idx, options = {}) {
   // Preserve the current fractal's view before switching, then restore the next
   // fractal's own saved view if one exists.
   if (idx === state.fractalIdx) return;
   saveViewForCurrentFractal();
   state.fractalIdx = idx;
+  if (!options.preserveTour && state.tour.id) {
+    state.tour.id = "";
+    state.tour.stop = 0;
+    state.tour.playing = false;
+    ui.tourSelect.value = "";
+  }
   const modes = FRACTALS[state.fractalIdx].meta.colorModes || ["escape"];
   if (modes.includes("basin")) state.colorMode = COLOR_MODE_BASIN;
   else state.colorMode = COLOR_MODE_ESCAPE;
@@ -2326,6 +2924,38 @@ function toggleColorMode() {
   }
   state.colorMode = state.colorMode === COLOR_MODE_BASIN ? COLOR_MODE_ESCAPE : COLOR_MODE_BASIN;
   markMinimapDirty();
+  markDeepDirty(true);
+  saveSettings();
+}
+
+function toggleCompareMode() {
+  state.compare.enabled = !state.compare.enabled;
+  if (state.compare.enabled) {
+    state.tour.playing = false;
+    if (state.cpuRefine && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  }
+  markDeepDirty(true);
+  saveSettings();
+}
+
+function setCompareFractal(idx) {
+  state.compare.fractalIdx = clampFractalIndex(idx);
+  const compareFractal = getCompareFractal();
+  if (!((compareFractal.meta.colorModes || []).includes("basin"))) {
+    state.compare.colorMode = COLOR_MODE_ESCAPE;
+  }
+  markDeepDirty(true);
+  saveSettings();
+}
+
+function toggleCompareColorMode() {
+  const compareFractal = getCompareFractal();
+  if (!((compareFractal.meta.colorModes || []).includes("basin"))) {
+    state.compare.colorMode = COLOR_MODE_ESCAPE;
+    saveSettings();
+    return;
+  }
+  state.compare.colorMode = state.compare.colorMode === COLOR_MODE_BASIN ? COLOR_MODE_ESCAPE : COLOR_MODE_BASIN;
   markDeepDirty(true);
   saveSettings();
 }
@@ -2372,6 +3002,28 @@ function share() {
     ui.btnShare.textContent = "Copied!";
     setTimeout(() => { ui.btnShare.textContent = "Share"; }, 1800);
   }).catch(() => window.prompt("Copy link:", url));
+}
+
+function copyFormula() {
+  const formula = getActiveFormulaText();
+  navigator.clipboard.writeText(formula).then(() => {
+    ui.btnCopyFormula.textContent = "Copied!";
+    setTimeout(() => { ui.btnCopyFormula.textContent = "Copy"; }, 1800);
+  }).catch(() => window.prompt("Copy formula:", formula));
+}
+
+function exportView() {
+  const exportCanvas = exportCompositeCanvas();
+  if (!exportCanvas) {
+    window.alert("Export is unavailable in this browser.");
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = exportCanvas.toDataURL("image/png");
+  link.download = buildExportFilename();
+  link.click();
+  ui.btnExport.textContent = "Exported";
+  setTimeout(() => { ui.btnExport.textContent = "Export"; }, 1800);
 }
 
 canvas.addEventListener("pointerdown", e => {
@@ -2458,7 +3110,26 @@ ui.btnRefine.addEventListener("click", toggleRefine);
 ui.btnHideHud.addEventListener("click", toggleHud);
 ui.btnShowHud.addEventListener("click", toggleHud);
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
+ui.btnExport.addEventListener("click",  exportView);
+ui.btnCompareToggle.addEventListener("click", toggleCompareMode);
+ui.compareFractalSelect.addEventListener("change", () => setCompareFractal(ui.compareFractalSelect.value));
+ui.compareColorStyle.addEventListener("change", () => {
+  state.compare.colorStyle = normalizeColorStyle(ui.compareColorStyle.value);
+  markDeepDirty(true);
+  saveSettings();
+});
+ui.btnComparePalette.addEventListener("click", () => {
+  state.compare.palette = (state.compare.palette + 1) % 5;
+  markDeepDirty(true);
+  saveSettings();
+});
+ui.btnCompareColorMode.addEventListener("click", toggleCompareColorMode);
+ui.btnCopyFormula.addEventListener("click", copyFormula);
 ui.btnShare.addEventListener("click",   share);
+ui.tourSelect.addEventListener("change", () => selectTour(ui.tourSelect.value, { immediate: true }));
+ui.btnTourPrev.addEventListener("click", () => stepTour(-1));
+ui.btnTourPlay.addEventListener("click", toggleTourPlayback);
+ui.btnTourNext.addEventListener("click", () => stepTour(1));
 ["iterations","colorCycle","juliaAngle"].forEach(id => {
   ui[id].addEventListener("input", () => {
     if (id === "iterations") ui.iterValue.textContent = ui.iterations.value;
@@ -2521,31 +3192,70 @@ function render(now) {
   }
 
   updateUI();
+  updateTourPlayback(now);
 
-  const { prog, loc } = getProgram(state.fractalIdx);
-  const jc = getRenderJuliaC();
-  const viewport = renderViewport();
+  gl.enable(gl.SCISSOR_TEST);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
 
-  const [x0Hi, x0Mid, x0Lo] = tsSplit(viewport.x0);
-  const [y0Hi, y0Mid, y0Lo] = tsSplit(viewport.y0);
-
-  gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-  gl.enableVertexAttribArray(loc.pos);
-  gl.vertexAttribPointer(loc.pos, 2, gl.FLOAT, false, 0, 0);
-
-  gl.uniform2f(loc.res,    viewport.width, viewport.height);
-  gl.uniform3f(loc.x0,    x0Hi, x0Mid, x0Lo);
-  gl.uniform3f(loc.y0,    y0Hi, y0Mid, y0Lo);
-  gl.uniform1f(loc.scale,  viewport.pixelScale);
-  gl.uniform1i(loc.iter,   getRenderIterations());
-  gl.uniform1f(loc.palette, state.palette);
-  gl.uniform1f(loc.cycle,  parseFloat(ui.colorCycle.value));
-  gl.uniform2f(loc.juliaC, jc[0], jc[1]);
-  gl.uniform1i(loc.colorMode, state.colorMode);
-  gl.uniform1i(loc.colorStyle, state.colorStyle);
-
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  if (state.compare.enabled) {
+    const halfWidth = Math.max(1, Math.floor(canvas.width * 0.5));
+    const rightWidth = Math.max(1, canvas.width - halfWidth);
+    drawScene({
+      fractalIdx: state.fractalIdx,
+      centerX: state.centerX,
+      centerY: state.centerY,
+      pixelScale: state.pixelScale,
+      iterations: getRenderIterations(),
+      palette: state.palette,
+      colorCycle: parseFloat(ui.colorCycle.value),
+      juliaC: getRenderJuliaC(),
+      colorMode: state.colorMode,
+      colorStyle: state.colorStyle,
+    }, {
+      x: 0,
+      y: 0,
+      width: halfWidth,
+      height: canvas.height,
+    });
+    drawScene({
+      fractalIdx: state.compare.fractalIdx,
+      centerX: state.centerX,
+      centerY: state.centerY,
+      pixelScale: state.pixelScale,
+      iterations: getRenderIterations(),
+      palette: state.compare.palette,
+      colorCycle: parseFloat(ui.colorCycle.value),
+      juliaC: getRenderJuliaC(state.compare.fractalIdx),
+      colorMode: state.compare.colorMode,
+      colorStyle: state.compare.colorStyle,
+    }, {
+      x: halfWidth,
+      y: 0,
+      width: rightWidth,
+      height: canvas.height,
+    });
+    if (deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  } else {
+    drawScene({
+      fractalIdx: state.fractalIdx,
+      centerX: state.centerX,
+      centerY: state.centerY,
+      pixelScale: state.pixelScale,
+      iterations: getRenderIterations(),
+      palette: state.palette,
+      colorCycle: parseFloat(ui.colorCycle.value),
+      juliaC: getRenderJuliaC(),
+      colorMode: state.colorMode,
+      colorStyle: state.colorStyle,
+    }, {
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height,
+    });
+  }
+  gl.disable(gl.SCISSOR_TEST);
   drawMinimap();
   maybeStartCpuRender(now);
   requestAnimationFrame(render);
@@ -2557,6 +3267,9 @@ resize();
 resetView(0);
 loadSettings();
 loadFromParams();
+if (state.tour.id && TOUR_MAP.has(state.tour.id)) {
+  selectTour(state.tour.id, { stop: state.tour.stop, immediate: true, skipSave: true, keepPlaying: state.tour.playing });
+}
 if (!state.pixelScale) resetView();
 ui.iterValue.textContent = ui.iterations.value;
 
