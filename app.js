@@ -567,6 +567,7 @@ const cpuRender = {
   rows: 0,
   step: 1,
   snapshot: null,
+  paintedSnapshot: null,
   workers: [],
   workerUrl: "",
   pendingBatches: 0,
@@ -1700,15 +1701,27 @@ function drawMinimap() {
 // move, fractal switch, or settings change.
 
 function markDeepDirty(clear = false) {
-  if (cpuRender.running && !cpuRender.previewOnly) cancelCpuWorkers();
+  if (cpuRender.running && (clear || !cpuRender.previewOnly)) cancelCpuWorkers();
   cpuRender.dirty = true;
   cpuRender.complete = false;
   cpuRender.dirtySince = performance.now();
-  if (!cpuRender.previewOnly) {
+  if (clear || !cpuRender.previewOnly) {
     cpuRender.generation++;
     cpuRender.running = false;
   }
-  if (clear && !cpuRender.previewOnly && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  if (clear) clearDeepOverlay();
+}
+
+function clearDeepOverlay() {
+  if (deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  cpuRender.paintedSnapshot = null;
+  if (deepCanvas) deepCanvas.style.transform = "";
+}
+
+function presentCpuImageData() {
+  cpuRender.paintedSnapshot = cpuRender.snapshot;
+  updateDeepOverlayTransform();
+  deepCtx.putImageData(cpuRender.imageData, 0, 0);
 }
 
 function deepSnapshotZoom(snapshot) {
@@ -1718,8 +1731,8 @@ function deepSnapshotZoom(snapshot) {
 
 function shouldRetainDeepOverlay() {
   if (!deepCtx || !state.cpuRefine || state.compare.enabled) return false;
-  if (!cpuRender.snapshot || cpuRender.snapshot.fractalIdx !== state.fractalIdx) return false;
-  const retainedZoom = deepSnapshotZoom(cpuRender.snapshot);
+  if (!cpuRender.paintedSnapshot || cpuRender.paintedSnapshot.fractalIdx !== state.fractalIdx) return false;
+  const retainedZoom = deepSnapshotZoom(cpuRender.paintedSnapshot);
   return Math.max(getZoom(), retainedZoom) >= CPU_PREVIEW_ZOOM_THRESHOLD;
 }
 
@@ -1730,7 +1743,7 @@ function updateDeepOverlayTransform() {
     return;
   }
 
-  const snapshot = cpuRender.snapshot;
+  const snapshot = cpuRender.paintedSnapshot;
   const scale = snapshot.pixelScale / Math.max(state.pixelScale, Number.MIN_VALUE);
   const tx = (snapshot.centerX - state.centerX) / state.pixelScale + canvas.width * 0.5 - scale * canvas.width * 0.5;
   const ty = (state.centerY - snapshot.centerY) / state.pixelScale + canvas.height * 0.5 - scale * canvas.height * 0.5;
@@ -1762,9 +1775,10 @@ function getCpuWorkerCount() {
     1,
     Math.floor(navigator.hardwareConcurrency || CPU_FALLBACK_LOGICAL_CORES)
   );
-  const workerBudget = reportedCores > CPU_RESERVED_LOGICAL_CORES
-    ? reportedCores - CPU_RESERVED_LOGICAL_CORES
-    : 1;
+  const reservedCores = reportedCores <= CPU_RESERVED_LOGICAL_CORES
+    ? 0
+    : Math.min(CPU_RESERVED_LOGICAL_CORES, Math.floor(reportedCores / 4));
+  const workerBudget = reportedCores - reservedCores;
   return Math.max(1, Math.min(CPU_MAX_WORKERS, workerBudget));
 }
 
@@ -2781,7 +2795,6 @@ function startCpuRender() {
   // sizes in CPU_PASSES.
   if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
   if (cpuRender.running) cancelCpuWorkers();
-  deepCanvas.style.transform = "";
   const generation = ++cpuRender.generation;
   cpuRender.running = true;
   cpuRender.dirty = false;
@@ -2928,7 +2941,7 @@ function initCpuWorkers() {
 }
 
 function dispatchCpuWorkerBatches() {
-  if (!cpuRender.running || cpuRender.dirty || !state.cpuRefine) return;
+  if (!cpuRender.running || (cpuRender.dirty && !cpuRender.previewOnly) || !state.cpuRefine) return;
 
   for (const entry of cpuRender.workers) {
     if (entry.busy || cpuRender.nextBatchBlock >= cpuRender.totalBlocks) continue;
@@ -2951,14 +2964,14 @@ function onCpuWorkerMessage(entry, data) {
   if (data.generation !== cpuRender.activeGeneration ||
       data.passIndex !== cpuRender.passIndex ||
       !cpuRender.running ||
-      cpuRender.dirty ||
+      (cpuRender.dirty && !cpuRender.previewOnly) ||
       !state.cpuRefine) return;
 
   recordCpuDiagnostics(data.totalSamples || 0, data.fallbackSamples || 0);
   paintCpuColorBatch(data.startBlock, data.colors);
   const now = performance.now();
   if (now - cpuRender.lastPaint > 32 || cpuRender.pendingBatches === 0) {
-    deepCtx.putImageData(cpuRender.imageData, 0, 0);
+    presentCpuImageData();
     cpuRender.lastPaint = now;
   }
 
@@ -2967,7 +2980,7 @@ function onCpuWorkerMessage(entry, data) {
 
 function finishCpuWorkerPassIfDone() {
   if (cpuRender.nextBatchBlock < cpuRender.totalBlocks || cpuRender.pendingBatches > 0) return;
-  deepCtx.putImageData(cpuRender.imageData, 0, 0);
+  presentCpuImageData();
   cpuRender.passIndex++;
   if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
     cpuRender.running = false;
@@ -2982,7 +2995,7 @@ function finishCpuWorkerPassIfDone() {
 function processCpuRenderMain(generation) {
   if (generation !== cpuRender.activeGeneration ||
       !cpuRender.running ||
-      cpuRender.dirty ||
+      (cpuRender.dirty && !cpuRender.previewOnly) ||
       !state.cpuRefine) return;
   const started = performance.now();
   const totalBlocks = cpuRender.cols * cpuRender.rows;
@@ -2990,7 +3003,7 @@ function processCpuRenderMain(generation) {
   while (performance.now() - started < CPU_FRAME_BUDGET_MS) {
     paintCpuBlock(cpuRender.blockIndex++);
     if (cpuRender.blockIndex >= totalBlocks) {
-      deepCtx.putImageData(cpuRender.imageData, 0, 0);
+      presentCpuImageData();
       cpuRender.passIndex++;
       if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
         cpuRender.running = false;
@@ -3002,7 +3015,7 @@ function processCpuRenderMain(generation) {
     }
   }
 
-  deepCtx.putImageData(cpuRender.imageData, 0, 0);
+  presentCpuImageData();
   requestAnimationFrame(() => processCpuRenderMain(generation));
 }
 
@@ -3140,7 +3153,7 @@ function toggleHud() {
 function toggleRefine() {
   state.cpuRefine = !state.cpuRefine;
   markDeepDirty(true);
-  if (!state.cpuRefine && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+  if (!state.cpuRefine) clearDeepOverlay();
   saveSettings();
 }
 
@@ -3160,7 +3173,7 @@ function toggleCompareMode() {
   state.compare.enabled = !state.compare.enabled;
   if (state.compare.enabled) {
     state.tour.playing = false;
-    if (state.cpuRefine && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+    if (state.cpuRefine) clearDeepOverlay();
   }
   markDeepDirty(true);
   saveSettings();
@@ -3462,8 +3475,7 @@ function render(now) {
       height: canvas.height,
     });
     if (deepCtx) {
-      deepCanvas.style.transform = "";
-      deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+      clearDeepOverlay();
     }
   } else {
     drawScene({

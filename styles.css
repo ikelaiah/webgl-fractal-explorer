@@ -35,7 +35,8 @@ textarea {
   position: relative;
   width: 100vw;
   height: 100vh;
-  min-height: 560px;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -84,8 +85,8 @@ textarea {
   right: 20px;
   z-index: 3;
   pointer-events: none;
-  width: 168px;
-  height: 168px;
+  width: clamp(124px, 12vw, 160px);
+  height: clamp(124px, 12vw, 160px);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(8, 14, 18, 0.72);
@@ -98,13 +99,33 @@ textarea {
   top: 20px;
   left: 20px;
   z-index: 4;
-  width: min(560px, calc(100vw - 40px));
-  padding: 18px;
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   backdrop-filter: blur(18px);
   box-shadow: 0 18px 70px rgba(0, 0, 0, 0.34);
+}
+
+.hud::-webkit-scrollbar {
+  width: 10px;
+}
+
+.hud::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.hud::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 .brand {
@@ -174,13 +195,13 @@ p {
 
 .readouts {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(72px, 0.72fr) minmax(118px, 1.18fr) minmax(150px, 1.35fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin: 18px 0;
+  margin: 16px 0;
 }
 
 .readouts div {
-  padding: 10px 12px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
@@ -205,7 +226,7 @@ label > span {
 
 .control-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .control-grid > label,
@@ -333,9 +354,9 @@ select option {
 
 .buttons {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 button {
@@ -374,8 +395,8 @@ button.active {
 .tour-panel {
   display: grid;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
@@ -406,7 +427,7 @@ button.active {
 }
 
 .tour-card {
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
@@ -428,8 +449,8 @@ button.active {
 .inspector-panel {
   display: grid;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
@@ -452,7 +473,7 @@ button.active {
 }
 
 .inspector-grid div {
-  padding: 10px 12px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
@@ -483,8 +504,8 @@ button.active {
 .compare-panel {
   display: grid;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
@@ -524,7 +545,7 @@ button.active {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  max-width: calc(100vw - 40px);
+  max-width: min(1000px, calc(100vw - 600px));
 }
 
 .tips span {
@@ -539,22 +560,30 @@ button.active {
 
 @media (max-width: 720px) {
   .shell {
-    min-height: 640px;
+    min-height: 0;
   }
 
   .hud {
-    top: 12px;
-    left: 12px;
-    width: calc(100vw - 24px);
-    padding: 14px;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    max-height: min(74dvh, 620px);
+    padding: 12px 12px calc(14px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -18px 70px rgba(0, 0, 0, 0.44);
   }
 
   #minimap {
-    top: auto;
+    top: 12px;
     right: 12px;
-    bottom: 12px;
-    width: 116px;
-    height: 116px;
+    bottom: auto;
+    width: 108px;
+    height: 108px;
   }
 
   .readouts {
@@ -589,15 +618,73 @@ button.active {
   }
 
   .buttons {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
   .show-hud-btn {
-    top: 12px;
+    top: auto;
     left: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
   }
 
+  .tips {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand {
+    gap: 10px;
+  }
+
+  .mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+
+  p {
+    font-size: 0.8rem;
+  }
+
+  .readouts {
+    gap: 6px;
+  }
+
+  .readouts div {
+    padding: 8px;
+  }
+
+  .control-grid > label,
+  .formula-row,
+  .tour-select-row,
+  .compare-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  button,
+  select,
+  input[type="number"] {
+    min-height: 42px;
+  }
+
+  .tour-actions,
+  .compare-actions {
+    gap: 6px;
+  }
+
+  .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1160px) {
   .tips {
     display: none;
   }
