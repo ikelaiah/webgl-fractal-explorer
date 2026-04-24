@@ -62,6 +62,7 @@ textarea {
   height: 100%;
   display: block;
   pointer-events: none;
+  transform-origin: 0 0;
 }
 
 .compare-divider {

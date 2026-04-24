@@ -125,13 +125,12 @@ const ui = {
   btnTourPrev: document.getElementById("btnTourPrev"),
   btnTourPlay: document.getElementById("btnTourPlay"),
   btnTourNext: document.getElementById("btnTourNext"),
-  inspectorBackend: document.getElementById("inspectorBackend"),
   inspectX: document.getElementById("inspectX"),
   inspectY: document.getElementById("inspectY"),
-  inspectZoom: document.getElementById("inspectZoom"),
-  inspectIter: document.getElementById("inspectIter"),
   inspectMode: document.getElementById("inspectMode"),
   inspectFamily: document.getElementById("inspectFamily"),
+  inspectPerturb: document.getElementById("inspectPerturb"),
+  inspectOrbit: document.getElementById("inspectOrbit"),
   inspectSummary: document.getElementById("inspectSummary"),
   btnHideHud:  document.getElementById("btnHideHud"),
   btnShowHud:  document.getElementById("btnShowHud"),
@@ -180,6 +179,7 @@ const CPU_FALLBACK_LOGICAL_CORES = 4;
 const CPU_MAX_WORKERS = 30;
 const CPU_WORKER_BATCH_BLOCKS = 16384;
 const CPU_PREVIEW_ZOOM_THRESHOLD = 1e4;
+const PERTURB_MIN_ZOOM = 1e7;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
 const COLOR_STYLE_PALETTE = 0;
@@ -575,6 +575,12 @@ const cpuRender = {
   lastPaint: 0,
   useWorkers: false,
   previewOnly: false,
+  backend: "cpu",
+  diagnostics: {
+    totalSamples: 0,
+    fallbackSamples: 0,
+    referenceOrbitLength: 0,
+  },
 };
 
 function viewBoundsForFractal(idx = state.fractalIdx) {
@@ -623,7 +629,7 @@ function setCameraTarget(cx, cy, pixelScale, immediate = false) {
     state.centerY = state.targetCenterY;
     state.pixelScale = state.targetPixelScale;
   }
-  if (changed || centerChanged) markDeepDirty(true);
+  if (changed || centerChanged) markDeepDirty(false);
 }
 
 function syncTargetToCurrent() {
@@ -965,13 +971,12 @@ function updateUI() {
   ui.btnTourPlay.disabled = !tour || tour.stops.length < 2;
   ui.btnTourPlay.textContent = state.tour.playing ? "Pause" : "Play";
   ui.btnTourPlay.classList.toggle("active", state.tour.playing);
-  ui.inspectorBackend.textContent = getRenderModeLabel();
   ui.inspectX.textContent = formatCoordinate(state.targetCenterX);
   ui.inspectY.textContent = formatCoordinate(state.targetCenterY);
-  ui.inspectZoom.textContent = formatZoom(getZoom());
-  ui.inspectIter.textContent = String(getRenderIterations());
   ui.inspectMode.textContent = getInspectorModeLabel(f);
   ui.inspectFamily.textContent = f.category;
+  ui.inspectPerturb.textContent = getPerturbationHealthLabel();
+  ui.inspectOrbit.textContent = formatReferenceOrbitLength();
   ui.inspectSummary.textContent = getInspectorSummary(f, stop);
   ui.compareDivider.hidden = !state.compare.enabled;
   ui.btnCompareToggle.textContent = state.compare.enabled ? "On" : "Off";
@@ -996,10 +1001,15 @@ function formatZoom(zoom) {
 function getRenderModeLabel() {
   if (state.compare.enabled) return "GPU Split";
   if (!state.cpuRefine || !deepCtx) return "GPU";
-  if (cpuRender.running) return cpuRender.useWorkers
-    ? `CPU x${cpuRender.workers.length}`
-    : "CPU...";
-  if (cpuRender.complete && !cpuRender.dirty) return "CPU";
+  if (cpuRender.running) {
+    if (cpuRender.backend === "perturbMandelbrot") {
+      return cpuRender.useWorkers ? `Perturb x${cpuRender.workers.length}` : "Perturb...";
+    }
+    return cpuRender.useWorkers ? `CPU x${cpuRender.workers.length}` : "CPU...";
+  }
+  if (cpuRender.complete && !cpuRender.dirty) {
+    return cpuRender.backend === "perturbMandelbrot" ? "Perturb" : "CPU";
+  }
   return "GPU";
 }
 
@@ -1029,10 +1039,69 @@ function getInspectorModeLabel(fractal = FRACTALS[state.fractalIdx]) {
 function getInspectorSummary(fractal = FRACTALS[state.fractalIdx], stop = getActiveTourStop()) {
   const backend = getRenderModeLabel();
   const base = fractal.explanationText || "This fractal uses iterative orbit behavior to separate stable and unstable regions.";
+  const perturb = getPerturbationSummary();
   if (stop) {
-    return `${stop.note} Renderer: ${backend}. ${base}`;
+    return `${stop.note} Renderer: ${backend}. ${perturb} ${base}`;
   }
-  return `${base} Renderer: ${backend}.`;
+  return `${base} Renderer: ${backend}. ${perturb}`;
+}
+
+function currentViewSupportsPerturbation() {
+  return FRACTALS[state.fractalIdx].formula === "mandelbrot";
+}
+
+function isPerturbationArmed() {
+  return currentViewSupportsPerturbation() && getZoom() >= PERTURB_MIN_ZOOM;
+}
+
+function getPerturbationSummary() {
+  if (isActivePerturbationRender()) {
+    const { totalSamples, fallbackSamples, referenceOrbitLength } = cpuRender.diagnostics;
+    const fallbackRate = totalSamples > 0 ? (fallbackSamples / totalSamples) * 100 : 0;
+    return `Reference orbit length ${referenceOrbitLength || 0}. Fallback rate ${fallbackRate.toFixed(fallbackRate >= 10 ? 1 : 2)}%.`;
+  }
+  if (!currentViewSupportsPerturbation()) return "Perturbation is unavailable for this formula in v1.0.";
+  if (isPerturbationArmed()) return "Perturbation is armed and will engage on the next CPU refinement pass.";
+  return "Perturbation activates only for Mandelbrot at deeper zoom.";
+}
+
+function isActivePerturbationRender() {
+  return cpuRender.backend === "perturbMandelbrot" && !cpuRender.dirty && !state.compare.enabled && state.cpuRefine;
+}
+
+function getPerturbationHealthLabel() {
+  if (isActivePerturbationRender()) {
+    const { totalSamples, fallbackSamples } = cpuRender.diagnostics;
+    if (totalSamples <= 0) return "Starting";
+    const rate = fallbackSamples / totalSamples;
+    if (rate <= 0.01) return "Stable";
+    if (rate <= 0.05) return "Light fallback";
+    if (rate <= 0.15) return "Mixed fallback";
+    return "Heavy fallback";
+  }
+  if (isPerturbationArmed()) return "Armed";
+  if (currentViewSupportsPerturbation()) return "Standby";
+  return "Inactive";
+}
+
+function formatReferenceOrbitLength() {
+  return isActivePerturbationRender()
+    ? String(cpuRender.diagnostics.referenceOrbitLength || 0)
+    : isPerturbationArmed()
+      ? "Pending"
+      : "N/A";
+}
+
+function resetCpuDiagnostics(snapshot) {
+  cpuRender.backend = snapshot.backend || "cpu";
+  cpuRender.diagnostics.totalSamples = 0;
+  cpuRender.diagnostics.fallbackSamples = 0;
+  cpuRender.diagnostics.referenceOrbitLength = snapshot.referenceOrbit ? snapshot.referenceOrbit.length : 0;
+}
+
+function recordCpuDiagnostics(totalSamples, fallbackSamples) {
+  cpuRender.diagnostics.totalSamples += totalSamples;
+  cpuRender.diagnostics.fallbackSamples += fallbackSamples;
 }
 
 function slugify(value) {
@@ -1642,6 +1711,33 @@ function markDeepDirty(clear = false) {
   if (clear && !cpuRender.previewOnly && deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
 }
 
+function deepSnapshotZoom(snapshot) {
+  if (!snapshot || !snapshot.pixelScale) return 0;
+  return FRACTALS[snapshot.fractalIdx || 0].scale / (snapshot.pixelScale * Math.max(canvas.width, 1));
+}
+
+function shouldRetainDeepOverlay() {
+  if (!deepCtx || !state.cpuRefine || state.compare.enabled) return false;
+  if (!cpuRender.snapshot || cpuRender.snapshot.fractalIdx !== state.fractalIdx) return false;
+  const retainedZoom = deepSnapshotZoom(cpuRender.snapshot);
+  return Math.max(getZoom(), retainedZoom) >= CPU_PREVIEW_ZOOM_THRESHOLD;
+}
+
+function updateDeepOverlayTransform() {
+  if (!deepCtx) return;
+  if (!shouldRetainDeepOverlay()) {
+    deepCanvas.style.transform = "";
+    return;
+  }
+
+  const snapshot = cpuRender.snapshot;
+  const scale = snapshot.pixelScale / Math.max(state.pixelScale, Number.MIN_VALUE);
+  const tx = (snapshot.centerX - state.centerX) / state.pixelScale + canvas.width * 0.5 - scale * canvas.width * 0.5;
+  const ty = (state.centerY - snapshot.centerY) / state.pixelScale + canvas.height * 0.5 - scale * canvas.height * 0.5;
+
+  deepCanvas.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+}
+
 function isCameraSettled() {
   if (!state.pixelScale || !state.targetPixelScale) return false;
   const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
@@ -1695,6 +1791,7 @@ function cpuWorkerSource() {
     escapeJulia,
     escapeBurningShip,
     cpuEscape,
+    perturbEscapeMandelbrot,
     cpuColor,
   ].map(fn => fn.toString()).join("\n\n");
 
@@ -1757,6 +1854,7 @@ self.onmessage = event => {
   const { startBlock, count } = d;
   const actualCount = Math.min(count, _totalBlocks - startBlock);
   const colors = new Uint8ClampedArray(actualCount * 4);
+  let fallbackSamples = 0;
 
   for (let i = 0; i < actualCount; i++) {
     const blockIndex = startBlock + i;
@@ -1768,8 +1866,12 @@ self.onmessage = event => {
     const sampleY = Math.min(yStart + _step * 0.5, _snap.height - 0.5);
     const worldX = _snap.x0 + sampleX * _snap.scaleX;
     const worldY = _snap.y1 - sampleY * _snap.scaleY;
+    const sample = _snap.backend === "perturbMandelbrot"
+      ? perturbEscapeMandelbrot(_snap.referenceOrbit, worldX, worldY, _snap.iter)
+      : cpuEscape(_snap.formula, worldX, worldY, _snap.iter, _snap.juliaC);
+    if (_snap.backend === "perturbMandelbrot" && sample && sample.fallback) fallbackSamples++;
     const color = cpuColor(
-      cpuEscape(_snap.formula, worldX, worldY, _snap.iter, _snap.juliaC),
+      sample,
       _snap.iter,
       _snap.palette,
       _snap.cycle,
@@ -1783,7 +1885,10 @@ self.onmessage = event => {
     colors[p + 3] = 255;
   }
 
-  self.postMessage({ generation: _generation, passIndex: _passIndex, startBlock, colors }, [colors.buffer]);
+  self.postMessage(
+    { generation: _generation, passIndex: _passIndex, startBlock, colors, totalSamples: actualCount, fallbackSamples },
+    [colors.buffer]
+  );
 };
 `;
 }
@@ -2394,7 +2499,7 @@ function cpuEscape(formula, x, y, maxIter, jc) {
       if (dx * dx + dy * dy < PERIOD_EPS) {
         _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
         _SAMPLE.root = undefined; _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind;
-        _SAMPLE.mag2 = zx * zx + zy * zy;
+        _SAMPLE.mag2 = zx * zx + zy * zy; _SAMPLE.fallback = false;
         return _SAMPLE;
       }
       if (++since >= refresh) { refX = zx; refY = zy; since = 0; if (refresh < 512) refresh *= 2; }
@@ -2403,20 +2508,124 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     if (!Number.isFinite(mag2)) {
       _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
       _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
-      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = 1e9;
+      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = 1e9; _SAMPLE.fallback = false;
       return _SAMPLE;
     }
     if (mag2 > 256) {
       _SAMPLE.iter = n; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
       _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
-      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = mag2;
+      _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = mag2; _SAMPLE.fallback = false;
       return _SAMPLE;
     }
   }
 
   _SAMPLE.iter = maxIter; _SAMPLE.zx = zx; _SAMPLE.zy = zy;
   _SAMPLE.root = hasBasin ? basinRootId(formula, zx, zy) : undefined;
-  _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = zx * zx + zy * zy;
+  _SAMPLE.trap = trap; _SAMPLE.trapKind = trapKind; _SAMPLE.mag2 = zx * zx + zy * zy; _SAMPLE.fallback = false;
+  return _SAMPLE;
+}
+
+function shouldUsePerturbationBackend(snapshot) {
+  // This first perturbation slice is intentionally narrow: only Mandelbrot uses
+  // it, and only once the zoom is deep enough that the old per-pixel escape
+  // path is wasting precision on redoing the same reference orbit for every
+  // sample. Unsupported formulas stay on the existing CPU backend.
+  return snapshot.formula === "mandelbrot" && isPerturbationArmed();
+}
+
+function buildReferenceOrbit(cx, cy, maxIter) {
+  // The reference orbit is the one "full" Mandelbrot orbit we compute for the
+  // viewport center. Perturbation then asks every nearby pixel to evolve only
+  // its small delta away from that orbit instead of redoing the whole sequence.
+  const orbitX = new Float64Array(maxIter + 1);
+  const orbitY = new Float64Array(maxIter + 1);
+  let zx = 0;
+  let zy = 0;
+  orbitX[0] = 0;
+  orbitY[0] = 0;
+  let length = 1;
+
+  for (let n = 0; n < maxIter; n++) {
+    const x2 = zx * zx;
+    const y2 = zy * zy;
+    const ny = 2 * zx * zy + cy;
+    zx = x2 - y2 + cx;
+    zy = ny;
+    orbitX[n + 1] = zx;
+    orbitY[n + 1] = zy;
+    length = n + 2;
+    if (!Number.isFinite(zx) || !Number.isFinite(zy) || zx * zx + zy * zy > 256) break;
+  }
+
+  return {
+    cx,
+    cy,
+    length,
+    orbitX,
+    orbitY,
+  };
+}
+
+function perturbEscapeMandelbrot(reference, worldX, worldY, maxIter) {
+  // Delta iteration evolves dc-relative coordinates:
+  //   z = Z_ref + dz
+  //   dz(n+1) = 2*Z_ref(n)*dz(n) + dz(n)^2 + dc
+  // This lets one high-cost reference orbit serve many nearby pixels.
+  const dcx = worldX - reference.cx;
+  const dcy = worldY - reference.cy;
+  let dzx = 0;
+  let dzy = 0;
+
+  for (let n = 0; n < maxIter; n++) {
+    const refZx = reference.orbitX[n];
+    const refZy = reference.orbitY[n];
+    const zx = refZx + dzx;
+    const zy = refZy + dzy;
+    const mag2 = zx * zx + zy * zy;
+    if (!Number.isFinite(mag2)) {
+      const fallback = cpuEscape("mandelbrot", worldX, worldY, maxIter, [0, 0]);
+      fallback.fallback = true;
+      return fallback;
+    }
+    if (mag2 > 256) {
+      _SAMPLE.iter = n;
+      _SAMPLE.zx = zx;
+      _SAMPLE.zy = zy;
+      _SAMPLE.root = undefined;
+      _SAMPLE.trap = Infinity;
+      _SAMPLE.trapKind = undefined;
+      _SAMPLE.mag2 = mag2;
+      _SAMPLE.fallback = false;
+      return _SAMPLE;
+    }
+    if (n + 1 >= reference.length) break;
+
+    const dz2x = dzx * dzx - dzy * dzy;
+    const dz2y = 2 * dzx * dzy;
+    const linX = 2 * (refZx * dzx - refZy * dzy);
+    const linY = 2 * (refZx * dzy + refZy * dzx);
+    dzx = linX + dz2x + dcx;
+    dzy = linY + dz2y + dcy;
+
+    // If the delta stops being "small", the perturbation approximation is no
+    // longer worth trusting. Falling back keeps deep-zoom glitches localized.
+    if (!Number.isFinite(dzx) || !Number.isFinite(dzy) || dzx * dzx + dzy * dzy > 16) {
+      const fallback = cpuEscape("mandelbrot", worldX, worldY, maxIter, [0, 0]);
+      fallback.fallback = true;
+      return fallback;
+    }
+  }
+
+  const finalZx = reference.orbitX[Math.max(0, reference.length - 1)] + dzx;
+  const finalZy = reference.orbitY[Math.max(0, reference.length - 1)] + dzy;
+  _SAMPLE.iter = maxIter;
+  _SAMPLE.zx = finalZx;
+  _SAMPLE.zy = finalZy;
+  _SAMPLE.root = undefined;
+  _SAMPLE.trap = Infinity;
+  _SAMPLE.trapKind = undefined;
+  _SAMPLE.mag2 = finalZx * finalZx + finalZy * finalZy;
+  _SAMPLE.fallback = false;
   return _SAMPLE;
 }
 
@@ -2541,9 +2750,12 @@ function makeCpuSnapshot() {
   // Snapshot everything a CPU pass needs so asynchronous workers are insulated
   // from later UI/camera mutations.
   const viewport = renderViewport();
-  return {
+  const snapshot = {
     fractalIdx: state.fractalIdx,
     formula: FRACTALS[state.fractalIdx].formula || "mandelbrot",
+    centerX: state.centerX,
+    centerY: state.centerY,
+    pixelScale: state.pixelScale,
     palette: state.palette,
     colorMode: state.colorMode,
     colorStyle: state.colorStyle,
@@ -2557,6 +2769,11 @@ function makeCpuSnapshot() {
     scaleY: viewport.worldHeight / Math.max(deepCanvas.height, 1),
     juliaC: getRenderJuliaC(),
   };
+  snapshot.backend = shouldUsePerturbationBackend(snapshot) ? "perturbMandelbrot" : "cpu";
+  snapshot.referenceOrbit = snapshot.backend === "perturbMandelbrot"
+    ? buildReferenceOrbit(state.centerX, state.centerY, snapshot.iter)
+    : null;
+  return snapshot;
 }
 
 function startCpuRender() {
@@ -2576,6 +2793,7 @@ function startCpuRender() {
   cpuRender.passIndex = 0;
   cpuRender.blockIndex = 0;
   cpuRender.snapshot = makeCpuSnapshot();
+  resetCpuDiagnostics(cpuRender.snapshot);
   cpuRender.lastPaint = 0;
   cpuRender.useWorkers = ensureCpuWorkers();
   setupCpuPass();
@@ -2587,7 +2805,7 @@ function startCpuPreview() {
   // During very deep drags, paint only the first coarse pass and move that image
   // with CSS. This gives visual continuity without recomputing every pointermove.
   if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
-  if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
+  if (!shouldRetainDeepOverlay() && getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
   if (cpuRender.running) cancelCpuWorkers();
   const generation = ++cpuRender.generation;
   cpuRender.running = true;
@@ -2600,6 +2818,7 @@ function startCpuPreview() {
   cpuRender.passIndex = 0;
   cpuRender.blockIndex = 0;
   cpuRender.snapshot = makeCpuSnapshot();
+  resetCpuDiagnostics(cpuRender.snapshot);
   cpuRender.lastPaint = 0;
   cpuRender.useWorkers = ensureCpuWorkers();
   setupCpuPass();
@@ -2633,8 +2852,14 @@ function paintCpuBlock(blockIndex) {
   const sampleY = Math.min(yStart + step * 0.5, snap.height - 0.5);
   const worldX = snap.x0 + sampleX * snap.scaleX;
   const worldY = snap.y1 - sampleY * snap.scaleY;
+  const sample = snap.backend === "perturbMandelbrot"
+    ? perturbEscapeMandelbrot(snap.referenceOrbit, worldX, worldY, snap.iter)
+    : cpuEscape(snap.formula, worldX, worldY, snap.iter, snap.juliaC);
+  if (snap.backend === "perturbMandelbrot") {
+    recordCpuDiagnostics(1, sample && sample.fallback ? 1 : 0);
+  }
   const color = cpuColor(
-    cpuEscape(snap.formula, worldX, worldY, snap.iter, snap.juliaC),
+    sample,
     snap.iter,
     snap.palette,
     snap.cycle,
@@ -2729,6 +2954,7 @@ function onCpuWorkerMessage(entry, data) {
       cpuRender.dirty ||
       !state.cpuRefine) return;
 
+  recordCpuDiagnostics(data.totalSamples || 0, data.fallbackSamples || 0);
   paintCpuColorBatch(data.startBlock, data.colors);
   const now = performance.now();
   if (now - cpuRender.lastPaint > 32 || cpuRender.pendingBatches === 0) {
@@ -2826,6 +3052,7 @@ function anchorTargetAtClient(clientX, clientY, worldX, worldY, scale) {
 }
 
 function zoomTargetAtClient(clientX, clientY, factor) {
+  startCpuPreview();
   const anchor = worldAtClient(clientX, clientY);
   anchorTargetAtClient(clientX, clientY, anchor.x, anchor.y, state.targetPixelScale * factor);
 }
@@ -2864,6 +3091,7 @@ function beginPinch() {
   gesture.pinchStartScale = state.targetPixelScale;
   gesture.pinchAnchorX = anchor.x;
   gesture.pinchAnchorY = anchor.y;
+  startCpuPreview();
 }
 
 function updatePinch() {
@@ -3053,9 +3281,6 @@ canvas.addEventListener("pointermove", e => {
     state.dragStartCY + dy * sy * state.targetPixelScale,
     state.targetPixelScale
   );
-  if (cpuRender.previewOnly) {
-    deepCanvas.style.transform = `translate(${dx}px,${dy}px)`;
-  }
 });
 
 function endPointer(e) {
@@ -3183,6 +3408,7 @@ function render(now) {
 
   applyKeyboard(dt);
   nudgeCamera(dt);
+  updateDeepOverlayTransform();
 
   state.fpsFrames++;
   if (now - state.fpsTime > 500) {
@@ -3235,7 +3461,10 @@ function render(now) {
       width: rightWidth,
       height: canvas.height,
     });
-    if (deepCtx) deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+    if (deepCtx) {
+      deepCanvas.style.transform = "";
+      deepCtx.clearRect(0, 0, deepCanvas.width, deepCanvas.height);
+    }
   } else {
     drawScene({
       fractalIdx: state.fractalIdx,
