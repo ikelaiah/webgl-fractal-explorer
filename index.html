@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WebGL Fractal Explorer</title>
-    <link rel="stylesheet" href="styles.css?v=1.3.5">
+    <link rel="stylesheet" href="styles.css?v=1.3.6">
   </head>
   <body>
     <main class="shell">
@@ -13,7 +13,11 @@
       <canvas id="minimap" aria-label="Fractal overview minimap"></canvas>
       <div id="compareDivider" class="compare-divider" hidden aria-hidden="true"></div>
 
-      <section class="hud" aria-label="Fractal controls">
+      <section class="hud" aria-label="Fractal controls" data-mobile-state="compact" data-mobile-tab="explore">
+        <button id="btnSheetHandle" type="button" class="sheet-handle" aria-label="Expand mobile controls" aria-expanded="false">
+          <span></span>
+        </button>
+
         <div class="brand">
           <span class="mark"></span>
           <div>
@@ -21,6 +25,14 @@
             <p id="fractalName">Mandelbrot Set</p>
           </div>
           <button id="btnHideHud" type="button" title="Hide panel (H)" aria-label="Hide controls panel">&#x2715;</button>
+        </div>
+
+        <div class="mobile-quickbar" role="group" aria-label="Mobile quick controls">
+          <button id="btnMobilePrev" type="button" title="Previous fractal">&lt;</button>
+          <button id="btnMobileNext" type="button" title="Next fractal">&gt;</button>
+          <button id="btnMobilePalette" type="button" title="Change palette">Palette</button>
+          <button id="btnMobileRefine" type="button" title="Toggle CPU refinement">Refine</button>
+          <button id="btnMobileControls" type="button" title="Open controls" aria-controls="mobileControlTabs" aria-expanded="false">Controls</button>
         </div>
 
         <div class="readouts">
@@ -42,8 +54,15 @@
           </div>
         </div>
 
+        <div id="mobileControlTabs" class="mobile-sheet-tabs" role="tablist" aria-label="Mobile control sections">
+          <button type="button" class="mobile-tab active" role="tab" aria-selected="true" data-mobile-tab-target="explore">Explore</button>
+          <button type="button" class="mobile-tab" role="tab" aria-selected="false" data-mobile-tab-target="formula">Formula</button>
+          <button type="button" class="mobile-tab" role="tab" aria-selected="false" data-mobile-tab-target="tours">Tours</button>
+          <button type="button" class="mobile-tab" role="tab" aria-selected="false" data-mobile-tab-target="inspect">Inspect</button>
+        </div>
+
         <div class="control-grid">
-          <label>
+          <label class="control-fractal">
             <span>Fractal</span>
             <select id="fractalSelect" aria-label="Choose fractal"></select>
           </label>
@@ -73,18 +92,18 @@
             <p id="composerSummary" class="composer-summary">Mandelbrot start: z = z^2 + c</p>
             <p class="composer-note">GPU preview only. CPU refinement and perturbation are unavailable for composed formulas.</p>
           </section>
-          <label>
+          <label class="control-iterations">
             <span>Iterations</span>
             <div class="slider-row">
               <input id="iterations" type="range" min="32" max="512" step="8" value="64">
               <span id="iterValue" class="slider-value">64</span>
             </div>
           </label>
-          <label>
+          <label class="control-color">
             <span>Color</span>
             <input id="colorCycle" type="range" min="0" max="4" step="0.01" value="0">
           </label>
-          <label>
+          <label class="control-tone">
             <span>Tone</span>
             <select id="colorStyle" aria-label="Choose color tone style">
               <option value="0">Palette</option>
@@ -92,11 +111,11 @@
               <option value="2">Duotone</option>
             </select>
           </label>
-          <label id="juliaRow" style="display:none">
+          <label id="juliaRow" class="control-julia" style="display:none">
             <span>Parameter</span>
             <input id="juliaAngle" type="range" min="0" max="6.2832" step="0.01" value="0">
           </label>
-          <label id="fixedJuliaRow" style="display:none">
+          <label id="fixedJuliaRow" class="control-julia-fixed" style="display:none">
             <span>Julia C</span>
             <div class="julia-picker">
               <input id="juliaReal" type="number" step="0.001" aria-label="Julia real component">
@@ -216,7 +235,7 @@
       </section>
     </main>
 
-    <script src="fractals.js?v=1.3.5"></script>
-    <script src="app.js?v=1.3.5"></script>
+    <script src="fractals.js?v=1.3.6"></script>
+    <script src="app.js?v=1.3.6"></script>
   </body>
 </html>

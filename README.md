@@ -1,6 +1,6 @@
 # 🌀 WebGL Fractal Explorer ✨
 
-[![Version](https://img.shields.io/badge/version-1.3.5-7df0c0?style=for-the-badge)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.6-7df0c0?style=for-the-badge)](CHANGELOG.md)
 [![WebGL](https://img.shields.io/badge/WebGL-1.0-2a7fff?style=for-the-badge&logo=webgl&logoColor=white)](https://www.khronos.org/webgl/)
 [![No Build](https://img.shields.io/badge/no_build-static_HTML-f0b45a?style=for-the-badge)](#-run-locally)
 [![License](https://img.shields.io/badge/license-MIT-8a5cf6?style=for-the-badge)](LICENSE)
@@ -35,7 +35,7 @@ Explore dozens of fractal families, follow guided tours, compare formulas side-b
 - 🧭 **Per-fractal view memory** — each fractal remembers your last camera position
 - 🗺️ **Minimap** overview with live viewport indicator
 - 🔗 **URL sharing** — every view state is encodable as a link
-- 📱 **Responsive HUD** with a desktop panel and mobile bottom-sheet layout
+- 📱 **Responsive HUD** with a desktop panel, compact mobile dock, and tabbed bottom-sheet layout
 - ⌨️ **Keyboard shortcuts** for fast navigation
 
 ## 🧬 Fractal Catalog

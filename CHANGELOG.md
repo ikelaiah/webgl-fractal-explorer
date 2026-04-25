@@ -2,6 +2,16 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.3.6] — 2026-04-25
+
+### Mobile UI
+
+- Added a compact mobile control dock with quick fractal, palette, refine, and controls actions
+- Added an expandable mobile bottom sheet with Explore, Formula, Tours, and Inspect tabs
+- Reduced mobile viewport competition by hiding the minimap while the expanded sheet is open
+- Kept shallow reloads and zooms on the GPU path by disabling default CPU refinement below the deep-zoom threshold and clearing stale CPU overlays during camera changes
+- Bumped static asset query versions to avoid stale mobile CSS/JS on hosted builds
+
 ## [1.3.5] — 2026-04-25
 
 ### Formula Composer

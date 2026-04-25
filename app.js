@@ -85,6 +85,7 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 // ─── DOM ──────────────────────────────────────────────────────────────────────
 
 const ui = {
+  shell:       document.querySelector(".shell"),
   fractalName: document.getElementById("fractalName"),
   zoomReadout: document.getElementById("zoomReadout"),
   fpsReadout:  document.getElementById("fpsReadout"),
@@ -139,6 +140,13 @@ const ui = {
   inspectSummary: document.getElementById("inspectSummary"),
   btnHideHud:  document.getElementById("btnHideHud"),
   btnShowHud:  document.getElementById("btnShowHud"),
+  btnSheetHandle: document.getElementById("btnSheetHandle"),
+  btnMobilePrev: document.getElementById("btnMobilePrev"),
+  btnMobileNext: document.getElementById("btnMobileNext"),
+  btnMobilePalette: document.getElementById("btnMobilePalette"),
+  btnMobileRefine: document.getElementById("btnMobileRefine"),
+  btnMobileControls: document.getElementById("btnMobileControls"),
+  mobileTabs:  Array.from(document.querySelectorAll(".mobile-tab")),
   iterValue:   document.getElementById("iterValue"),
   hud:         document.querySelector(".hud"),
 };
@@ -208,6 +216,7 @@ const CPU_PREVIEW_ZOOM_THRESHOLD = 1e4;
 const PERTURB_MIN_ZOOM = 1e7;
 const COLOR_MODE_ESCAPE = 0;
 const COLOR_MODE_BASIN = 1;
+const MOBILE_QUERY = window.matchMedia("(max-width: 720px)");
 const COLOR_STYLE_PALETTE = 0;
 const COLOR_STYLE_MONOTONE = 1;
 const COLOR_STYLE_DUOTONE = 2;
@@ -221,7 +230,7 @@ const state = {
   palette: 0,
   colorMode: COLOR_MODE_ESCAPE,
   colorStyle: COLOR_STYLE_PALETTE,
-  cpuRefine: true,
+  cpuRefine: false,
   centerX: FRACTALS[0].center[0],
   centerY: FRACTALS[0].center[1],
   pixelScale: 0,
@@ -751,6 +760,7 @@ function loadSettings() {
     const savedView = state.savedViews[state.fractalIdx];
     if (savedView) setCameraTarget(savedView.cx, savedView.cy, savedView.ps, true);
     else if (!state.pixelScale) resetView(state.fractalIdx);
+    if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) state.cpuRefine = false;
   } catch { /* ignore */ }
 }
 
@@ -1064,7 +1074,12 @@ function updateUI() {
       : "Toggle CPU refinement";
   ui.btnRefine.classList.toggle("active", state.cpuRefine && !f.meta.gpuOnly);
   ui.btnRefine.disabled = state.compare.enabled || !!f.meta.gpuOnly;
+  ui.btnMobileRefine.textContent = f.meta.gpuOnly ? "GPU Only" : (state.cpuRefine ? "Refine ON" : "Refine");
+  ui.btnMobileRefine.title = ui.btnRefine.title;
+  ui.btnMobileRefine.classList.toggle("active", state.cpuRefine && !f.meta.gpuOnly);
+  ui.btnMobileRefine.disabled = ui.btnRefine.disabled;
   ui.btnPalette.textContent = state.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
+  ui.btnMobilePalette.textContent = ui.btnPalette.textContent;
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
   if (!compareSupportsBasin && state.compare.colorMode === COLOR_MODE_BASIN) state.compare.colorMode = COLOR_MODE_ESCAPE;
@@ -1910,6 +1925,7 @@ function markDeepDirty(clear = false) {
     cpuRender.running = false;
   }
   if (clear) clearDeepOverlay();
+  else if (!shouldRetainDeepOverlay()) clearDeepOverlay();
 }
 
 function clearDeepOverlay() {
@@ -2994,6 +3010,7 @@ function startCpuRender() {
   // Full refinement runs after input settles and progresses through all block
   // sizes in CPU_PASSES.
   if (!deepCtx || !state.cpuRefine || !currentViewSupportsCpuRefinement() || !deepCanvas.width || !deepCanvas.height) return;
+  if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
   if (cpuRender.running) cancelCpuWorkers();
   const generation = ++cpuRender.generation;
   cpuRender.running = true;
@@ -3224,6 +3241,7 @@ function maybeStartCpuRender(now) {
   // would waste time painting frames that are immediately invalidated.
   if (state.compare.enabled) return;
   if (!state.cpuRefine || !currentViewSupportsCpuRefinement() || !deepCtx || !cpuRender.dirty) return;
+  if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
   if (cpuRender.running && !cpuRender.previewOnly) return;
   if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
   if (state.dragging || activePointers.size || !isCameraSettled()) return;
@@ -3344,10 +3362,53 @@ function selectFractal(idx, options = {}) {
   saveSettings();
 }
 
+function isMobileLayout() {
+  return MOBILE_QUERY.matches;
+}
+
+function syncMobileShellState() {
+  const sheetOpen = isMobileLayout() && !ui.hud.hidden && ui.hud.dataset.mobileState === "open";
+  ui.shell.classList.toggle("mobile-sheet-open", sheetOpen);
+}
+
+function setMobileSheetState(nextState) {
+  const open = nextState === "open";
+  ui.hud.dataset.mobileState = open ? "open" : "compact";
+  ui.btnSheetHandle.setAttribute("aria-expanded", String(open));
+  ui.btnSheetHandle.setAttribute("aria-label", open ? "Collapse mobile controls" : "Expand mobile controls");
+  ui.btnMobileControls.setAttribute("aria-expanded", String(open));
+  ui.btnMobileControls.textContent = open ? "Close" : "Controls";
+  syncMobileShellState();
+}
+
+function toggleMobileSheet() {
+  setMobileSheetState(ui.hud.dataset.mobileState === "open" ? "compact" : "open");
+}
+
+function setMobileTab(tab) {
+  const validTab = ui.mobileTabs.some(button => button.dataset.mobileTabTarget === tab) ? tab : "explore";
+  ui.hud.dataset.mobileTab = validTab;
+  ui.mobileTabs.forEach(button => {
+    const active = button.dataset.mobileTabTarget === validTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+}
+
+function syncMobileLayout() {
+  if (isMobileLayout() && ui.hud.dataset.mobileState !== "open") {
+    setMobileSheetState("compact");
+  } else {
+    syncMobileShellState();
+  }
+}
+
 function toggleHud() {
   const hidden = !ui.hud.hidden;
   ui.hud.hidden = hidden;
   ui.btnShowHud.hidden = !hidden;
+  if (!hidden && isMobileLayout()) setMobileSheetState("compact");
+  else syncMobileShellState();
 }
 
 function toggleRefine() {
@@ -3541,6 +3602,18 @@ ui.fractalSelect.addEventListener("change", () => {
   if (Number.isInteger(idx) && idx >= 0 && idx < FRACTALS.length) selectFractal(idx);
 });
 ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
+ui.btnMobilePrev.addEventListener("click", () => switchFractal(-1));
+ui.btnMobileNext.addEventListener("click", () => switchFractal(1));
+ui.btnMobilePalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
+ui.btnMobileRefine.addEventListener("click", toggleRefine);
+ui.btnMobileControls.addEventListener("click", () => setMobileSheetState(ui.hud.dataset.mobileState === "open" ? "compact" : "open"));
+ui.btnSheetHandle.addEventListener("click", toggleMobileSheet);
+ui.mobileTabs.forEach(button => {
+  button.addEventListener("click", () => {
+    setMobileTab(button.dataset.mobileTabTarget);
+    setMobileSheetState("open");
+  });
+});
 ui.colorStyle.addEventListener("change", () => {
   state.colorStyle = normalizeColorStyle(ui.colorStyle.value);
   markMinimapDirty();
@@ -3594,7 +3667,12 @@ ui.btnTourNext.addEventListener("click", () => stepTour(1));
   ui[id].addEventListener("input", updateFixedJuliaParamFromInputs);
 });
 ui.btnRandomJulia.addEventListener("click", randomizeJuliaSeed);
-window.addEventListener("resize", () => { resize(); markDeepDirty(true); });
+window.addEventListener("resize", () => { resize(); syncMobileLayout(); markDeepDirty(true); });
+if (MOBILE_QUERY.addEventListener) {
+  MOBILE_QUERY.addEventListener("change", syncMobileLayout);
+} else {
+  MOBILE_QUERY.addListener(syncMobileLayout);
+}
 
 // ─── Keyboard pan/zoom ────────────────────────────────────────────────────────
 
@@ -3727,5 +3805,7 @@ if (state.tour.id && TOUR_MAP.has(state.tour.id)) {
 }
 if (!state.pixelScale) resetView();
 ui.iterValue.textContent = ui.iterations.value;
+setMobileTab(ui.hud.dataset.mobileTab || "explore");
+syncMobileLayout();
 
 requestAnimationFrame(render);
