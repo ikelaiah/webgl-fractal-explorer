@@ -1,6 +1,6 @@
 # 🌀 WebGL Fractal Explorer ✨
 
-[![Version](https://img.shields.io/badge/version-1.3.0-7df0c0?style=for-the-badge)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.5-7df0c0?style=for-the-badge)](CHANGELOG.md)
 [![WebGL](https://img.shields.io/badge/WebGL-1.0-2a7fff?style=for-the-badge&logo=webgl&logoColor=white)](https://www.khronos.org/webgl/)
 [![No Build](https://img.shields.io/badge/no_build-static_HTML-f0b45a?style=for-the-badge)](#-run-locally)
 [![License](https://img.shields.io/badge/license-MIT-8a5cf6?style=for-the-badge)](LICENSE)
@@ -11,7 +11,7 @@
 [![CSS3](https://img.shields.io/badge/CSS3-responsive-1572b6?style=flat-square&logo=css3&logoColor=white)](styles.css)
 [![Web Workers](https://img.shields.io/badge/Web_Workers-CPU_refinement-7df0c0?style=flat-square)](app.js)
 [![Precision](https://img.shields.io/badge/precision-triple--single_~72bit-2a7fff?style=flat-square)](#-precision)
-[![Fractals](https://img.shields.io/badge/fractals-65-ff8a2e?style=flat-square)](#-fractal-catalog)
+[![Fractals](https://img.shields.io/badge/fractals-66-ff8a2e?style=flat-square)](#-fractal-catalog)
 [![Mobile](https://img.shields.io/badge/mobile-bottom_sheet_UI-14d1ff?style=flat-square)](styles.css)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-89f294?style=flat-square)](#-run-locally)
 
@@ -21,7 +21,8 @@ Explore dozens of fractal families, follow guided tours, compare formulas side-b
 
 ## ✨ Features
 
-- 🌀 **65 fractals** across 12 categories: Classic, Julia, Power, Folded, Perpendicular, Dynamic, Transcendental, Box Fold, Mandelbar, Rational, Basins, and Orbit Trap
+- 🌀 **66 fractals** across 13 categories: Classic, Julia, Power, Folded, Perpendicular, Dynamic, Transcendental, Box Fold, Mandelbar, Rational, Basins, Orbit Trap, and Composer
+- 🧩 **Formula Composer** for assembling a GPU-rendered formula stack from safe primitives such as powers, folds, conjugation, transcendental maps, rational division, box fold, and Newton update
 - 🔬 **Triple-single precision** coordinate arithmetic (~72 bits) in GLSL shaders, enabling zoom depths to ~10¹⁴×
 - ⚡ **CPU refinement mode** via Web Workers (up to 30 workers, browser hint permitting) with progressive multi-pass rendering
 - 🧪 **Perturbation-assisted Mandelbrot refinement** with diagnostics for reference orbit length and fallback sampling
@@ -53,6 +54,7 @@ Explore dozens of fractal families, follow guided tours, compare formulas side-b
 | Rational | Magnet Type I, Magnet Type II, Feather, Rational Mandelbrot Lace |
 | Basins | Newton Cubic, Nova, Newton Quartic, Relaxed Newton Spiral, Relaxed Newton Storm, Halley Cubic, Newton Quintic |
 | Orbit Trap | Orbit Trap Mandelbrot, Orbit Trap Flower, Orbit Trap Lotus, Orbit Trap Rose Julia, Orbit Trap Star, Orbit Trap Web |
+| Composer | Composed Formula |
 
 ## 🎮 Controls
 
@@ -80,6 +82,7 @@ Additional controls in the HUD panel:
 - **Tone** — cosine palette, monotone, or duotone coloring
 - **Parameter** — Julia angle slider (for parameterised Julia sets)
 - **Julia C** — real/imaginary inputs with randomise button (for fixed-seed Julia sets)
+- **Composer** — controlled formula stack with Mandelbrot/Julia start modes and four safe operation slots
 - **Refine** — toggle CPU high-precision overlay
 - **Share** — copy current view as URL
 - **Export** — save the composed view as PNG

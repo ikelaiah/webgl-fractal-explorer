@@ -286,6 +286,70 @@ select,
   cursor: text;
 }
 
+.composer-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.composer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composer-header strong {
+  font-size: 0.86rem;
+}
+
+.composer-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#btnComposerUse,
+#btnComposerReset {
+  min-width: 74px;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.composer-row,
+.composer-step {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.composer-step span,
+.composer-row > span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.composer-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-summary {
+  margin: 0;
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 #btnCopyFormula {
   min-width: 60px;
   min-height: 42px;
@@ -604,6 +668,11 @@ button.active {
     grid-template-columns: 58px minmax(0, 1fr);
   }
 
+  .composer-row,
+  .composer-step {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
   .inspector-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -661,6 +730,8 @@ button.active {
 
   .control-grid > label,
   .formula-row,
+  .composer-row,
+  .composer-step,
   .tour-select-row,
   .compare-row {
     grid-template-columns: 1fr;

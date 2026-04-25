@@ -54,6 +54,24 @@
               <button id="btnCopyFormula" type="button" title="Copy active formula">Copy</button>
             </div>
           </div>
+          <section class="composer-panel" aria-label="Formula composer">
+            <div class="composer-header">
+              <strong>Composer</strong>
+              <div class="composer-header-actions">
+                <button id="btnComposerReset" type="button" title="Reset composer">Reset</button>
+                <button id="btnComposerUse" type="button" title="Use composed formula">Use</button>
+              </div>
+            </div>
+            <label class="composer-row">
+              <span>Mode</span>
+              <select id="composerMode" aria-label="Choose composer start mode">
+                <option value="mandelbrot">Mandelbrot</option>
+                <option value="julia">Julia</option>
+              </select>
+            </label>
+            <div id="composerStack" class="composer-stack" aria-label="Composer operations"></div>
+            <p id="composerSummary" class="composer-summary">Mandelbrot start: z = z^2 + c</p>
+          </section>
           <label>
             <span>Iterations</span>
             <div class="slider-row">

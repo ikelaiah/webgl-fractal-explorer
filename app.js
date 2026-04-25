@@ -93,6 +93,11 @@ const ui = {
   fractalSelect: document.getElementById("fractalSelect"),
   compareDivider: document.getElementById("compareDivider"),
   formulaDisplay: document.getElementById("formulaDisplay"),
+  composerMode: document.getElementById("composerMode"),
+  composerStack: document.getElementById("composerStack"),
+  composerSummary: document.getElementById("composerSummary"),
+  btnComposerUse: document.getElementById("btnComposerUse"),
+  btnComposerReset: document.getElementById("btnComposerReset"),
   iterations:  document.getElementById("iterations"),
   colorStyle:  document.getElementById("colorStyle"),
   colorCycle:  document.getElementById("colorCycle"),
@@ -157,6 +162,27 @@ FRACTALS.forEach((fractal, idx) => {
 });
 const fractalNavOrder = Array.from(fractalOptionGroups.values())
   .flatMap(group => Array.from(group.children, option => parseInt(option.value, 10)));
+const COMPOSER_FRACTAL_INDEX = FRACTALS.findIndex(fractal => fractal.formula === "composer");
+
+for (let slot = 0; slot < 4; slot++) {
+  const label = document.createElement("label");
+  label.className = "composer-step";
+  const span = document.createElement("span");
+  span.textContent = `Step ${slot + 1}`;
+  const select = document.createElement("select");
+  select.className = "composer-op";
+  select.dataset.slot = String(slot);
+  select.setAttribute("aria-label", `Composer step ${slot + 1}`);
+  COMPOSER_OPERATION_DEFS.forEach(op => {
+    const option = document.createElement("option");
+    option.value = op.id;
+    option.textContent = op.label;
+    select.appendChild(option);
+  });
+  label.appendChild(span);
+  label.appendChild(select);
+  ui.composerStack.appendChild(label);
+}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +244,7 @@ const state = {
     colorMode: COLOR_MODE_ESCAPE,
     colorStyle: COLOR_STYLE_PALETTE,
   },
+  composer: normalizeComposerConfig(COMPOSER_DEFAULT),
   tour: {
     id: "",
     stop: 0,
@@ -394,6 +421,7 @@ function buildSessionSnapshot() {
       colorMode: parseInt(state.compare.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
       colorStyle: normalizeColorStyle(state.compare.colorStyle),
     },
+    composer: normalizeComposerConfig(state.composer),
     tour: {
       id: typeof state.tour.id === "string" ? state.tour.id : "",
       stop: Math.max(0, parseInt(state.tour.stop, 10) || 0),
@@ -410,6 +438,7 @@ function applySessionSnapshot(snapshot, options = {}) {
     ? active.view
     : { cx: active.cx, cy: active.cy, ps: active.ps };
   const compare = data.compare && typeof data.compare === "object" ? data.compare : {};
+  const composer = data.composer && typeof data.composer === "object" ? data.composer : {};
   const tour = data.tour && typeof data.tour === "object" ? data.tour : {};
 
   if (active.fractalIdx !== undefined) state.fractalIdx = clampFractalIndex(active.fractalIdx);
@@ -438,6 +467,8 @@ function applySessionSnapshot(snapshot, options = {}) {
     colorMode: parseInt(compare.colorMode, 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
     colorStyle: normalizeColorStyle(compare.colorStyle),
   };
+  state.composer = normalizeComposerConfig(composer);
+  syncComposerFractal({ recompile: false });
   state.tour = {
     id: typeof tour.id === "string" ? tour.id : "",
     stop: Math.max(0, parseInt(tour.stop, 10) || 0),
@@ -453,6 +484,7 @@ function buildShareStateSnapshot() {
     version: session.version,
     active: session.active,
     compare: session.compare,
+    composer: session.composer,
     tour: session.tour,
   };
 }
@@ -490,6 +522,11 @@ function sessionSnapshotToParams(snapshot) {
     params.set("clm", String(snapshot.compare.colorMode));
     params.set("cls", String(snapshot.compare.colorStyle));
     if (snapshot.compare.lockCamera === false) params.set("clock", "0");
+  }
+  if (snapshot.composer) {
+    const composer = normalizeComposerConfig(snapshot.composer);
+    params.set("cmo", composer.mode);
+    params.set("cop", composer.ops.join(","));
   }
   if (snapshot.tour && snapshot.tour.id) {
     params.set("tour", snapshot.tour.id);
@@ -530,6 +567,10 @@ function paramsToSessionSnapshot(search) {
       colorMode: p.has("clm") && parseInt(p.get("clm"), 10) === COLOR_MODE_BASIN ? COLOR_MODE_BASIN : COLOR_MODE_ESCAPE,
       colorStyle: p.has("cls") ? normalizeColorStyle(p.get("cls")) : COLOR_STYLE_PALETTE,
     },
+    composer: normalizeComposerConfig({
+      mode: p.get("cmo") || undefined,
+      ops: p.has("cop") ? p.get("cop").split(",") : undefined,
+    }),
     tour: {
       id: p.get("tour") || "",
       stop: Math.max(0, parseInt(p.get("stop"), 10) || 0),
@@ -759,6 +800,73 @@ function getCompareFractal() {
   return FRACTALS[clampFractalIndex(state.compare.fractalIdx)] || FRACTALS[0];
 }
 
+function isComposerFractal(idx = state.fractalIdx) {
+  return idx === COMPOSER_FRACTAL_INDEX || FRACTALS[idx]?.formula === "composer";
+}
+
+function syncComposerFractal(options = {}) {
+  if (COMPOSER_FRACTAL_INDEX < 0) return;
+  const recompile = options.recompile !== false;
+  const config = normalizeComposerConfig(state.composer);
+  state.composer = config;
+  const fractal = FRACTALS[COMPOSER_FRACTAL_INDEX];
+  fractal.composer = config;
+  fractal.src = buildComposerFractalSource(config);
+  fractal.formulaText = buildComposerFormulaText(config);
+  fractal.explanationText = "A generated formula assembled from safe primitives. It renders on the GPU from the active composer stack.";
+  if (recompile && programs[COMPOSER_FRACTAL_INDEX]) {
+    gl.deleteProgram(programs[COMPOSER_FRACTAL_INDEX].prog);
+    programs[COMPOSER_FRACTAL_INDEX] = null;
+  }
+}
+
+function syncComposerControls() {
+  const config = normalizeComposerConfig(state.composer);
+  ui.composerMode.value = config.mode;
+  ui.composerStack.querySelectorAll(".composer-op").forEach(select => {
+    const slot = parseInt(select.dataset.slot, 10) || 0;
+    select.value = config.ops[slot] || "empty";
+  });
+  ui.composerSummary.textContent = buildComposerFormulaText(config);
+  const active = isComposerFractal();
+  ui.btnComposerUse.textContent = active ? "Active" : "Use";
+  ui.btnComposerUse.classList.toggle("active", active);
+}
+
+function setComposerConfig(next) {
+  state.composer = normalizeComposerConfig({
+    ...state.composer,
+    ...next,
+  });
+  syncComposerFractal();
+  if (isComposerFractal()) {
+    markMinimapDirty();
+    markDeepDirty(true);
+  }
+  saveSettings();
+}
+
+function useComposerFractal() {
+  if (COMPOSER_FRACTAL_INDEX < 0) return;
+  syncComposerFractal();
+  if (!isComposerFractal()) {
+    selectFractal(COMPOSER_FRACTAL_INDEX);
+  } else {
+    markDeepDirty(true);
+    saveSettings();
+  }
+}
+
+function resetComposerConfig() {
+  state.composer = normalizeComposerConfig(COMPOSER_DEFAULT);
+  syncComposerFractal();
+  if (isComposerFractal()) {
+    markMinimapDirty();
+    markDeepDirty(true);
+  }
+  saveSettings();
+}
+
 function stopTourPlayback(save = true) {
   if (!state.tour.playing) return;
   state.tour.playing = false;
@@ -940,19 +1048,22 @@ function updateUI() {
   ui.compareFractalSelect.value = String(compareFractal ? FRACTALS.indexOf(compareFractal) : 0);
   ui.compareColorStyle.value = String(state.compare.colorStyle);
   ui.formulaDisplay.value = getActiveFormulaText(f);
+  syncComposerControls();
   ui.tourSelect.value = tour ? tour.id : "";
   ui.colorStyle.value = String(state.colorStyle);
   ui.juliaRow.style.display  = f.julia ? "" : "none";
-  ui.fixedJuliaRow.style.display = f.juliaParam ? "" : "none";
+  ui.fixedJuliaRow.style.display = f.juliaParam && (!isComposerFractal() || state.composer.mode === "julia") ? "" : "none";
   syncJuliaParamInputs();
   ui.iterReadout.textContent = getRenderIterations();
   ui.modeReadout.textContent = getRenderModeLabel();
-  ui.btnRefine.textContent = state.cpuRefine ? "Refine ON" : "Refine";
-  ui.btnRefine.title = state.cpuRefine
-    ? `Toggle CPU refinement (${getCpuWorkerCount()} workers on this device)`
-    : "Toggle CPU refinement";
-  ui.btnRefine.classList.toggle("active", state.cpuRefine);
-  ui.btnRefine.disabled = state.compare.enabled;
+  ui.btnRefine.textContent = f.meta.gpuOnly ? "GPU Only" : (state.cpuRefine ? "Refine ON" : "Refine");
+  ui.btnRefine.title = f.meta.gpuOnly
+    ? "CPU refinement is unavailable for generated formulas"
+    : state.cpuRefine
+      ? `Toggle CPU refinement (${getCpuWorkerCount()} workers on this device)`
+      : "Toggle CPU refinement";
+  ui.btnRefine.classList.toggle("active", state.cpuRefine && !f.meta.gpuOnly);
+  ui.btnRefine.disabled = state.compare.enabled || !!f.meta.gpuOnly;
   ui.btnPalette.textContent = state.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
@@ -1001,6 +1112,7 @@ function formatZoom(zoom) {
 
 function getRenderModeLabel() {
   if (state.compare.enabled) return "GPU Split";
+  if (FRACTALS[state.fractalIdx].meta.gpuOnly) return "GPU";
   if (!state.cpuRefine || !deepCtx) return "GPU";
   if (cpuRender.running) {
     if (cpuRender.backend === "perturbMandelbrot") {
@@ -1049,6 +1161,10 @@ function getInspectorSummary(fractal = FRACTALS[state.fractalIdx], stop = getAct
 
 function currentViewSupportsPerturbation() {
   return FRACTALS[state.fractalIdx].formula === "mandelbrot";
+}
+
+function currentViewSupportsCpuRefinement() {
+  return !FRACTALS[state.fractalIdx].meta.gpuOnly;
 }
 
 function isPerturbationArmed() {
@@ -1151,6 +1267,7 @@ function exportCompositeCanvas() {
 
 function getActiveFormulaText(fractal = FRACTALS[state.fractalIdx]) {
   const base = fractal.formulaText || "Formula metadata pending";
+  if (fractal.formula === "composer" && state.composer.mode !== "julia") return base;
   if (!fractal.julia && !fractal.juliaParam) return base;
   const [real, imag] = getRenderJuliaC(FRACTALS.indexOf(fractal));
   const imagSign = imag < 0 ? "-" : "+";
@@ -1317,6 +1434,85 @@ function basinColor(root, iter, maxIter, cycle = 0) {
   return _BASIN_COLOR;
 }
 
+function previewComposerEscape(x, y, jc) {
+  const config = normalizeComposerConfig(state.composer);
+  let zx = config.mode === "julia" ? x : 0;
+  let zy = config.mode === "julia" ? y : 0;
+  const cx = config.mode === "julia" ? jc[0] : x;
+  const cy = config.mode === "julia" ? jc[1] : y;
+
+  for (let n = 0; n < MINIMAP_ITER; n++) {
+    for (const op of config.ops) {
+      const x2 = zx * zx;
+      const y2 = zy * zy;
+      const xy = zx * zy;
+      if (op === "squareAddC") {
+        zx = x2 - y2 + cx;
+        zy = 2 * xy + cy;
+      } else if (op === "cubeAddC") {
+        zx = zx * (x2 - 3 * y2) + cx;
+        zy = zy * (3 * x2 - y2) + cy;
+      } else if (op === "absFold") {
+        zx = Math.abs(zx);
+        zy = Math.abs(zy);
+      } else if (op === "conjugate") {
+        zy = -zy;
+      } else if (op === "sinAddC") {
+        const ox = zx;
+        const yy = Math.max(-8, Math.min(8, zy));
+        zx = Math.sin(ox) * Math.cosh(yy) + cx;
+        zy = Math.cos(ox) * Math.sinh(yy) + cy;
+      } else if (op === "cosAddC") {
+        const ox = zx;
+        const yy = Math.max(-8, Math.min(8, zy));
+        zx = Math.cos(ox) * Math.cosh(yy) + cx;
+        zy = -Math.sin(ox) * Math.sinh(yy) + cy;
+      } else if (op === "expAddC") {
+        const ex = Math.exp(Math.max(-8, Math.min(8, zx)));
+        const ey = Math.max(-8, Math.min(8, zy));
+        zx = ex * Math.cos(ey) + cx;
+        zy = ex * Math.sin(ey) + cy;
+      } else if (op === "rationalLace") {
+        const z2x = x2 - y2;
+        const z2y = 2 * xy;
+        const dr = 1 + 0.35 * z2x;
+        const di = 0.35 * z2y;
+        const den = Math.max(dr * dr + di * di, 1e-8);
+        zx = z2x + (cx * dr + cy * di) / den;
+        zy = z2y + (cy * dr - cx * di) / den;
+      } else if (op === "boxFold") {
+        let bx = Math.max(-1, Math.min(1, zx)) * 2 - zx;
+        let by = Math.max(-1, Math.min(1, zy)) * 2 - zy;
+        const r2 = bx * bx + by * by;
+        if (r2 < 0.25) {
+          bx *= 4; by *= 4;
+        } else if (r2 < 1) {
+          bx /= r2; by /= r2;
+        }
+        zx = 2 * bx + cx;
+        zy = 2 * by + cy;
+      } else if (op === "newtonCubic") {
+        const z2x = x2 - y2;
+        const z2y = 2 * xy;
+        const z3x = z2x * zx - z2y * zy;
+        const z3y = z2x * zy + z2y * zx;
+        const den = Math.max(9 * (z2x * z2x + z2y * z2y), 1e-8);
+        const nr = z3x - 1;
+        const ni = z3y;
+        const dr = 3 * z2x;
+        const di = 3 * z2y;
+        const qx = (nr * dr + ni * di) / den;
+        const qy = (ni * dr - nr * di) / den;
+        zx = zx - qx + 0.18 * cx;
+        zy = zy - qy + 0.18 * cy;
+      }
+    }
+    if (!Number.isFinite(zx) || !Number.isFinite(zy)) return n;
+    if (zx * zx + zy * zy > 256) return n;
+  }
+  return MINIMAP_ITER;
+}
+
 function previewEscape(fractalIdx, x, y) {
   // Lightweight CPU sampler used for the minimap. The full CPU refinement path
   // below has more specialized hot loops, but this generic version is easier to
@@ -1324,6 +1520,7 @@ function previewEscape(fractalIdx, x, y) {
   const formula = FRACTALS[fractalIdx].formula || "mandelbrot";
   const meta = formulaMeta(formula);
   const jc = getRenderJuliaC(fractalIdx);
+  if (formula === "composer") return previewComposerEscape(x, y, jc);
   let zx = 0, zy = 0, cx = x, cy = y, px = 0, py = 0, trap = Infinity;
 
   if (meta.initial === "julia") {
@@ -1730,7 +1927,7 @@ function deepSnapshotZoom(snapshot) {
 }
 
 function shouldRetainDeepOverlay() {
-  if (!deepCtx || !state.cpuRefine || state.compare.enabled) return false;
+  if (!deepCtx || !state.cpuRefine || state.compare.enabled || !currentViewSupportsCpuRefinement()) return false;
   if (!cpuRender.paintedSnapshot || cpuRender.paintedSnapshot.fractalIdx !== state.fractalIdx) return false;
   const retainedZoom = deepSnapshotZoom(cpuRender.paintedSnapshot);
   return Math.max(getZoom(), retainedZoom) >= CPU_PREVIEW_ZOOM_THRESHOLD;
@@ -2793,7 +2990,7 @@ function makeCpuSnapshot() {
 function startCpuRender() {
   // Full refinement runs after input settles and progresses through all block
   // sizes in CPU_PASSES.
-  if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
+  if (!deepCtx || !state.cpuRefine || !currentViewSupportsCpuRefinement() || !deepCanvas.width || !deepCanvas.height) return;
   if (cpuRender.running) cancelCpuWorkers();
   const generation = ++cpuRender.generation;
   cpuRender.running = true;
@@ -2817,7 +3014,7 @@ function startCpuRender() {
 function startCpuPreview() {
   // During very deep drags, paint only the first coarse pass and move that image
   // with CSS. This gives visual continuity without recomputing every pointermove.
-  if (!deepCtx || !state.cpuRefine || !deepCanvas.width || !deepCanvas.height) return;
+  if (!deepCtx || !state.cpuRefine || !currentViewSupportsCpuRefinement() || !deepCanvas.width || !deepCanvas.height) return;
   if (!shouldRetainDeepOverlay() && getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return;
   if (cpuRender.running) cancelCpuWorkers();
   const generation = ++cpuRender.generation;
@@ -3023,7 +3220,7 @@ function maybeStartCpuRender(now) {
   // Delay refinement until the camera and pointers are idle; otherwise the CPU
   // would waste time painting frames that are immediately invalidated.
   if (state.compare.enabled) return;
-  if (!state.cpuRefine || !deepCtx || !cpuRender.dirty) return;
+  if (!state.cpuRefine || !currentViewSupportsCpuRefinement() || !deepCtx || !cpuRender.dirty) return;
   if (cpuRender.running && !cpuRender.previewOnly) return;
   if (now - cpuRender.dirtySince < CPU_REFINE_DELAY_MS) return;
   if (state.dragging || activePointers.size || !isCameraSettled()) return;
@@ -3151,6 +3348,10 @@ function toggleHud() {
 }
 
 function toggleRefine() {
+  if (!currentViewSupportsCpuRefinement()) {
+    clearDeepOverlay();
+    return;
+  }
   state.cpuRefine = !state.cpuRefine;
   markDeepDirty(true);
   if (!state.cpuRefine) clearDeepOverlay();
@@ -3349,6 +3550,16 @@ ui.btnHideHud.addEventListener("click", toggleHud);
 ui.btnShowHud.addEventListener("click", toggleHud);
 ui.btnReset.addEventListener("click",   () => { resetView(); saveSettings(); });
 ui.btnExport.addEventListener("click",  exportView);
+ui.btnComposerUse.addEventListener("click", useComposerFractal);
+ui.btnComposerReset.addEventListener("click", resetComposerConfig);
+ui.composerMode.addEventListener("change", () => setComposerConfig({ mode: ui.composerMode.value }));
+ui.composerStack.addEventListener("change", event => {
+  if (!event.target.classList.contains("composer-op")) return;
+  const ops = normalizeComposerConfig(state.composer).ops.slice();
+  const slot = Math.max(0, Math.min(parseInt(event.target.dataset.slot, 10) || 0, ops.length - 1));
+  ops[slot] = event.target.value;
+  setComposerConfig({ ops });
+});
 ui.btnCompareToggle.addEventListener("click", toggleCompareMode);
 ui.compareFractalSelect.addEventListener("change", () => setCompareFractal(ui.compareFractalSelect.value));
 ui.compareColorStyle.addEventListener("change", () => {

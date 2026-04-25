@@ -157,6 +157,164 @@ vec3 basinColor(float root, float iter, float maxIter) {
 }
 `;
 
+// ── Formula Composer ---------------------------------------------------------
+//
+// The composer is deliberately whitelist-based: the UI stores operation IDs,
+// and this builder expands those IDs into known-safe GLSL snippets. That keeps
+// the feature expressive without accepting arbitrary shader text.
+const COMPOSER_DEFAULT = Object.freeze({
+  mode: "mandelbrot",
+  ops: ["squareAddC", "absFold", "squareAddC", "empty"],
+});
+
+const COMPOSER_OPERATION_DEFS = Object.freeze([
+  { id: "empty", label: "No-op", formula: "" },
+  { id: "squareAddC", label: "z^2 + c", formula: "z = z^2 + c" },
+  { id: "cubeAddC", label: "z^3 + c", formula: "z = z^3 + c" },
+  { id: "absFold", label: "abs(real/imag)", formula: "z = |Re(z)| + i|Im(z)|" },
+  { id: "conjugate", label: "Conjugate", formula: "z = conjugate(z)" },
+  { id: "sinAddC", label: "sin(z) + c", formula: "z = sin(z) + c" },
+  { id: "cosAddC", label: "cos(z) + c", formula: "z = cos(z) + c" },
+  { id: "expAddC", label: "exp(z) + c", formula: "z = exp(z) + c" },
+  { id: "rationalLace", label: "Rational divide", formula: "z = z^2 + c/(1 + 0.35z^2)" },
+  { id: "boxFold", label: "Box fold", formula: "z = boxFold(z) + c" },
+  { id: "newtonCubic", label: "Newton update", formula: "z = z - (z^3 - 1)/(3z^2) + 0.18c" },
+]);
+
+const COMPOSER_OP_IDS = new Set(COMPOSER_OPERATION_DEFS.map(op => op.id));
+
+function normalizeComposerConfig(config) {
+  const source = config && typeof config === "object" ? config : {};
+  const mode = source.mode === "julia" ? "julia" : "mandelbrot";
+  const ops = Array.isArray(source.ops) ? source.ops : COMPOSER_DEFAULT.ops;
+  const normalizedOps = ops
+    .slice(0, 4)
+    .map(op => COMPOSER_OP_IDS.has(op) ? op : "empty");
+  while (normalizedOps.length < 4) normalizedOps.push("empty");
+  if (!normalizedOps.some(op => op !== "empty")) normalizedOps[0] = "squareAddC";
+  return { mode, ops: normalizedOps };
+}
+
+function composerOperationCode(id) {
+  if (id === "squareAddC") {
+    return "z = csqr(z) + c;";
+  }
+  if (id === "cubeAddC") {
+    return "z = cmul(csqr(z), z) + c;";
+  }
+  if (id === "absFold") {
+    return "z = vec2(abs(z.x), abs(z.y));";
+  }
+  if (id === "conjugate") {
+    return "z = vec2(z.x, -z.y);";
+  }
+  if (id === "sinAddC") {
+    return `
+      float sy = clamp(z.y, -8.0, 8.0);
+      float ey = exp(sy);
+      float eny = exp(-sy);
+      float ch = 0.5 * (ey + eny);
+      float sh = 0.5 * (ey - eny);
+      z = vec2(sin(z.x) * ch, cos(z.x) * sh) + c;
+    `;
+  }
+  if (id === "cosAddC") {
+    return `
+      float cy = clamp(z.y, -8.0, 8.0);
+      float ey = exp(cy);
+      float eny = exp(-cy);
+      float ch = 0.5 * (ey + eny);
+      float sh = 0.5 * (ey - eny);
+      z = vec2(cos(z.x) * ch, -sin(z.x) * sh) + c;
+    `;
+  }
+  if (id === "expAddC") {
+    return `
+      float ex = exp(clamp(z.x, -8.0, 8.0));
+      float ey = clamp(z.y, -8.0, 8.0);
+      z = vec2(ex * cos(ey), ex * sin(ey)) + c;
+    `;
+  }
+  if (id === "rationalLace") {
+    return `
+      vec2 z2 = csqr(z);
+      z = z2 + cdiv(c, vec2(1.0, 0.0) + 0.35 * z2);
+    `;
+  }
+  if (id === "boxFold") {
+    return `
+      vec2 b = clamp(z, vec2(-1.0), vec2(1.0)) * 2.0 - z;
+      float r2 = dot(b, b);
+      if (r2 < 0.25) {
+        b *= 4.0;
+      } else if (r2 < 1.0) {
+        b /= r2;
+      }
+      z = 2.0 * b + c;
+    `;
+  }
+  if (id === "newtonCubic") {
+    return `
+      vec2 z2 = csqr(z);
+      vec2 z3 = cmul(z2, z);
+      z = z - cdiv(z3 - vec2(1.0, 0.0), 3.0 * z2) + 0.18 * c;
+    `;
+  }
+  return "";
+}
+
+function buildComposerFormulaText(config) {
+  const normalized = normalizeComposerConfig(config);
+  const modeLabel = normalized.mode === "julia" ? "Julia start" : "Mandelbrot start";
+  const parts = normalized.ops
+    .map(id => COMPOSER_OPERATION_DEFS.find(op => op.id === id))
+    .filter(op => op && op.id !== "empty")
+    .map(op => op.formula);
+  return `${modeLabel}: ${parts.join(" -> ") || "z = z^2 + c"}`;
+}
+
+function buildComposerFractalSource(config) {
+  const normalized = normalizeComposerConfig(config);
+  const opCode = normalized.ops
+    .map(composerOperationCode)
+    .filter(Boolean)
+    .map(code => `{\n${code}\n}`)
+    .join("\n");
+  const initCode = normalized.mode === "julia"
+    ? `
+  vec2 z = p;
+  vec2 c = uJuliaC;
+    `
+    : `
+  vec2 z = vec2(0.0);
+  vec2 c = p;
+    `;
+
+  return fragHeader + `
+vec2 cmul(vec2 a, vec2 b) {
+  return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+}
+
+vec2 csqr(vec2 z) {
+  return vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+}
+
+void main() {
+  vec2 p = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  ${initCode}
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    ${opCode || "z = csqr(z) + c;"}
+    if (!all(equal(z, z)) || dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+}
+
 // ── Mandelbrot ────────────────────────────────────────────────────────────────
 const mandelbrotFrag = fragHeader + `
 void main() {
@@ -1427,6 +1585,7 @@ const FRACTALS = [
   { name: "Zubieta Julia",         category: "Julia",         src: zubietaJuliaFrag,     center: [0.0,  0.0], scale: 3.2, julia: false, juliaParam: [-0.54, 0.50], formula: "zubietaJulia" },
   { name: "Zubieta Julia - Spiral", category: "Julia",        src: zubietaJuliaFrag,     center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.22, 0.72], formula: "zubietaJulia" },
   { name: "Quartic Julia - Crown", category: "Julia",         src: quarticJuliaFrag,     center: [0.0,  0.0], scale: 2.8, julia: false, juliaParam: [0.0, 0.65], formula: "quarticJulia" },
+  { name: "Composed Formula",      category: "Composer",      src: buildComposerFractalSource(COMPOSER_DEFAULT), center: [0.0, 0.0], scale: 4.0, julia: false, juliaParam: [-0.4, 0.6], formula: "composer", composer: normalizeComposerConfig(COMPOSER_DEFAULT) },
 ];
 
 // Human-readable formula strings shown in the HUD. These are intentionally
@@ -1487,6 +1646,7 @@ const FORMULA_DISPLAY = Object.freeze({
   orbitTrapWeb: "z(n+1) = z(n)^2 + c, color from web orbit-trap distance",
   perpendicularBurningShip: "z(n+1) = (|Re(z(n)^2)| + iIm(z(n)^2)) + c",
   zubietaJulia: "z(n+1) = z(n)^2 + c with Zubieta-style parameter shaping",
+  composer: buildComposerFormulaText(COMPOSER_DEFAULT),
 });
 
 const FORMULA_EXPLANATION = Object.freeze({
@@ -1544,6 +1704,7 @@ const FORMULA_EXPLANATION = Object.freeze({
   orbitTrapWeb: "A web trap emphasizes crossing distance contours and makes the orbit field look more structural than painterly.",
   perpendicularBurningShip: "A perpendicular Burning Ship variant that keeps the fold-driven asymmetry but changes how vertical structure accumulates.",
   zubietaJulia: "A Julia-family variant tuned for more stylized, shaped parameter responses than the plain quadratic map.",
+  composer: "A generated formula assembled from safe primitives. It renders on the GPU from the active composer stack.",
 });
 
 for (const fractal of FRACTALS) {
@@ -1585,6 +1746,7 @@ const FORMULA_BEHAVIOR = Object.freeze({
   orbitTrapWeb: { orbitTrap: true },
   zubietaJulia: { initial: "julia" },
   newtonQuintic: { initial: "point", newton: true, basinRoots: 5, colorModes: ["escape", "basin"] },
+  composer: { gpuOnly: true, composer: true },
 });
 
 FRACTALS.forEach(fractal => {

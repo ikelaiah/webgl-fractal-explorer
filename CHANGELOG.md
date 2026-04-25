@@ -2,6 +2,23 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.3.5] — 2026-04-25
+
+### Formula Composer
+
+- Added a GPU-rendered Composed Formula entry to the fractal catalog
+- Added a controlled formula stack UI with Mandelbrot/Julia start modes and four operation slots
+- Added safe composer primitives for powers, absolute folds, conjugation, transcendental maps, rational division, box fold, and Newton update
+- Added Composer Use and Reset controls, including shader recompilation and state persistence
+- Composer configuration is included in saved sessions and share URLs
+- Minimap preview now supports composed formulas
+- CPU refinement is clearly disabled for generated formulas until arbitrary stack compilation is supported on the CPU path
+
+### Documentation
+
+- Updated README version badge to 1.3.5
+- Updated README feature list and catalog for 66 fractals across 13 categories
+
 ## [1.3.0] — 2026-04-25
 
 ### Exploration workflow
