@@ -350,6 +350,13 @@ select,
   line-height: 1.45;
 }
 
+.composer-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 #btnCopyFormula {
   min-width: 60px;
   min-height: 42px;

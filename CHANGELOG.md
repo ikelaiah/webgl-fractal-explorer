@@ -13,6 +13,7 @@ All notable changes to WebGL Fractal Explorer are documented here.
 - Composer configuration is included in saved sessions and share URLs
 - Minimap preview now supports composed formulas
 - CPU refinement is clearly disabled for generated formulas until arbitrary stack compilation is supported on the CPU path
+- Composer UI now explicitly labels generated formulas as GPU-only
 
 ### Documentation
 

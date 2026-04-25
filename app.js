@@ -1152,6 +1152,9 @@ function getInspectorModeLabel(fractal = FRACTALS[state.fractalIdx]) {
 function getInspectorSummary(fractal = FRACTALS[state.fractalIdx], stop = getActiveTourStop()) {
   const backend = getRenderModeLabel();
   const base = fractal.explanationText || "This fractal uses iterative orbit behavior to separate stable and unstable regions.";
+  if (fractal.meta.gpuOnly) {
+    return `${base} Renderer: GPU only. CPU refinement and perturbation are unavailable for generated formulas.`;
+  }
   const perturb = getPerturbationSummary();
   if (stop) {
     return `${stop.note} Renderer: ${backend}. ${perturb} ${base}`;
