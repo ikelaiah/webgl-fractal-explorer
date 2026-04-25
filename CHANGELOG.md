@@ -18,6 +18,7 @@ All notable changes to WebGL Fractal Explorer are documented here.
 
 - Updated README version badge to 1.3.5
 - Updated README feature list and catalog for 66 fractals across 13 categories
+- Versioned static CSS and JS asset URLs to avoid stale GitHub Pages cache mixes
 
 ## [1.3.0] — 2026-04-25
 
