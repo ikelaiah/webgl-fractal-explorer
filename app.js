@@ -92,6 +92,10 @@ const ui = {
   iterReadout: document.getElementById("iterReadout"),
   modeReadout: document.getElementById("modeReadout"),
   fractalSelect: document.getElementById("fractalSelect"),
+  fractalSearch: document.getElementById("fractalSearch"),
+  btnFavoriteFractal: document.getElementById("btnFavoriteFractal"),
+  btnClearFractalSearch: document.getElementById("btnClearFractalSearch"),
+  fractalSearchMeta: document.getElementById("fractalSearchMeta"),
   compareDivider: document.getElementById("compareDivider"),
   formulaDisplay: document.getElementById("formulaDisplay"),
   composerMode: document.getElementById("composerMode"),
@@ -151,25 +155,13 @@ const ui = {
   hud:         document.querySelector(".hud"),
 };
 
-const fractalOptionGroups = new Map();
 FRACTALS.forEach((fractal, idx) => {
-  // The registry in fractals.js is the source of truth for both rendering and
-  // navigation, so the dropdown is generated directly from it.
-  let group = fractalOptionGroups.get(fractal.category);
-  if (!group) {
-    group = document.createElement("optgroup");
-    group.label = `--- ${fractal.category.toUpperCase()} ---`;
-    fractalOptionGroups.set(fractal.category, group);
-    ui.fractalSelect.appendChild(group);
-  }
   const option = document.createElement("option");
   option.value = String(idx);
   option.textContent = fractal.name;
-  group.appendChild(option);
-  ui.compareFractalSelect.appendChild(option.cloneNode(true));
+  ui.compareFractalSelect.appendChild(option);
 });
-const fractalNavOrder = Array.from(fractalOptionGroups.values())
-  .flatMap(group => Array.from(group.children, option => parseInt(option.value, 10)));
+let fractalNavOrder = FRACTALS.map((_, idx) => idx);
 const COMPOSER_FRACTAL_INDEX = FRACTALS.findIndex(fractal => fractal.formula === "composer");
 
 for (let slot = 0; slot < 4; slot++) {
@@ -196,7 +188,7 @@ for (let slot = 0; slot < 4; slot++) {
 
 const STORAGE_KEY = "fractal2d_v1";
 const LEGACY_VIEWS_STORAGE_KEY = STORAGE_KEY + "_views";
-const SESSION_SCHEMA_VERSION = 2;
+const SESSION_SCHEMA_VERSION = 3;
 const MIN_ITER = 32;
 const MAX_ITER = 512;
 const DEFAULT_ITER = 64;
@@ -245,6 +237,7 @@ const state = {
   lastTime: performance.now(),
   juliaParams: {},
   savedViews: {},
+  favoriteFractals: {},
   compare: {
     enabled: false,
     lockCamera: true,
@@ -343,6 +336,60 @@ const TOURS = Object.freeze([
       },
     ],
   },
+  {
+    id: "julia-showcase",
+    name: "Julia Showcase",
+    stops: [
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Douady Rabbit Julia"),
+        cx: 0.0, cy: 0.0, ps: 0.0030,
+        iterations: 192, colorCycle: 0.30, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Rabbit Boundary",
+        note: "A fixed quadratic seed with a compact, readable boundary and strong local repetition.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "San Marco Dragon Julia"),
+        cx: 0.0, cy: 0.0, ps: 0.0030,
+        iterations: 224, colorCycle: 0.58, colorStyle: COLOR_STYLE_DUOTONE,
+        title: "Dragon Spine",
+        note: "This seed shows how a small change in c reshapes the same quadratic rule into a long folded spine.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Glynn Julia - Rosette"),
+        cx: 0.0, cy: 0.0, ps: 0.0026,
+        iterations: 224, colorCycle: 0.76, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Rosette Symmetry",
+        note: "The fractional-power Julia formula gives softer lobes than integer-power Julia sets.",
+      },
+    ],
+  },
+  {
+    id: "orbit-trap-gallery",
+    name: "Orbit Trap Gallery",
+    stops: [
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Orbit Trap Flower"),
+        cx: -0.5, cy: 0.0, ps: 0.004725,
+        iterations: 128, colorCycle: 0.12, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Flower Trap",
+        note: "Orbit-trap coloring reveals petal distance fields inside the familiar Mandelbrot orbit.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Orbit Trap Lotus"),
+        cx: -0.45, cy: 0.0, ps: 0.0042,
+        iterations: 160, colorCycle: 0.36, colorStyle: COLOR_STYLE_DUOTONE,
+        title: "Lotus Layers",
+        note: "Layered radial traps make the exterior bands feel more structural and ornamental.",
+      },
+      {
+        fractalIdx: FRACTALS.findIndex(f => f.name === "Orbit Trap Web"),
+        cx: -0.5, cy: 0.0, ps: 0.004725,
+        iterations: 144, colorCycle: 0.64, colorStyle: COLOR_STYLE_PALETTE,
+        title: "Web Field",
+        note: "A grid-and-ring trap makes crossing contours visible without changing the underlying escape formula.",
+      },
+    ],
+  },
 ]);
 const TOUR_MAP = new Map(TOURS.map(tour => [tour.id, tour]));
 const tourPlayback = {
@@ -397,6 +444,106 @@ function cloneViewsMap(views) {
   return result;
 }
 
+function cloneFavoriteMap(favorites) {
+  const result = {};
+  const source = Array.isArray(favorites)
+    ? favorites
+    : favorites && typeof favorites === "object"
+      ? Object.keys(favorites).filter(key => favorites[key])
+      : [];
+  source.forEach(value => {
+    const normalized = String(value).trim();
+    if (/^\d+$/.test(normalized)) {
+      const idx = parseInt(normalized, 10);
+      if (idx < 0 || idx >= FRACTALS.length) return;
+      result[idx] = true;
+    }
+  });
+  return result;
+}
+
+function isFavoriteFractal(idx = state.fractalIdx) {
+  return !!state.favoriteFractals[clampFractalIndex(idx)];
+}
+
+function getFractalSearchQuery() {
+  return (ui.fractalSearch?.value || "").trim().toLowerCase();
+}
+
+function fractalMatchesSearch(fractal, idx, query) {
+  if (!query) return true;
+  const text = [
+    fractal.name,
+    fractal.category,
+    fractal.formula,
+    fractal.formulaText,
+    fractal.explanationText,
+  ].join(" ").toLowerCase();
+  return text.includes(query) || String(idx + 1) === query;
+}
+
+function addFractalOptionGroup(label, indexes, usedIndexes) {
+  const group = document.createElement("optgroup");
+  group.label = label;
+  indexes.forEach(idx => {
+    if (usedIndexes.has(idx)) return;
+    const fractal = FRACTALS[idx];
+    const option = document.createElement("option");
+    option.value = String(idx);
+    option.textContent = fractal.name;
+    group.appendChild(option);
+    usedIndexes.add(idx);
+  });
+  if (group.children.length) ui.fractalSelect.appendChild(group);
+}
+
+function renderFractalOptions() {
+  const query = getFractalSearchQuery();
+  const matches = FRACTALS
+    .map((fractal, idx) => ({ fractal, idx }))
+    .filter(({ fractal, idx }) => fractalMatchesSearch(fractal, idx, query))
+    .map(entry => entry.idx);
+  const used = new Set();
+  const activeMatches = matches.includes(state.fractalIdx);
+  ui.fractalSelect.replaceChildren();
+
+  if (!activeMatches) {
+    addFractalOptionGroup("--- ACTIVE ---", [state.fractalIdx], used);
+  }
+  addFractalOptionGroup("--- SAVED ---", matches.filter(idx => isFavoriteFractal(idx)), used);
+
+  const categories = new Map();
+  matches.forEach(idx => {
+    if (used.has(idx)) return;
+    const category = FRACTALS[idx].category;
+    if (!categories.has(category)) categories.set(category, []);
+    categories.get(category).push(idx);
+  });
+  categories.forEach((indexes, category) => addFractalOptionGroup(`--- ${category.toUpperCase()} ---`, indexes, used));
+
+  fractalNavOrder = Array.from(ui.fractalSelect.querySelectorAll("option"))
+    .map(option => parseInt(option.value, 10))
+    .filter(Number.isInteger);
+  if (!fractalNavOrder.length) fractalNavOrder = [state.fractalIdx];
+
+  ui.fractalSelect.value = String(state.fractalIdx);
+  if (ui.fractalSearchMeta) {
+    ui.fractalSearchMeta.textContent = query
+      ? `${matches.length} of ${FRACTALS.length}`
+      : `${FRACTALS.length} total`;
+  }
+  if (ui.btnClearFractalSearch) ui.btnClearFractalSearch.disabled = !query;
+  updateFavoriteButton();
+}
+
+function updateFavoriteButton() {
+  if (!ui.btnFavoriteFractal) return;
+  const saved = isFavoriteFractal();
+  ui.btnFavoriteFractal.textContent = saved ? "Saved" : "Save";
+  ui.btnFavoriteFractal.classList.toggle("active", saved);
+  ui.btnFavoriteFractal.setAttribute("aria-pressed", String(saved));
+}
+
 function buildSessionSnapshot() {
   // Keep one explicit session object so future features such as compare mode,
   // tours, and richer sharing can reuse the same schema instead of inventing
@@ -422,6 +569,10 @@ function buildSessionSnapshot() {
       juliaParams: state.juliaParams,
     },
     views: cloneViewsMap(state.savedViews),
+    favorites: Object.keys(state.favoriteFractals)
+      .map(key => parseInt(key, 10))
+      .filter(Number.isInteger)
+      .sort((a, b) => a - b),
     compare: {
       enabled: !!state.compare.enabled,
       lockCamera: state.compare.lockCamera !== false,
@@ -468,6 +619,9 @@ function applySessionSnapshot(snapshot, options = {}) {
   if (view.ps !== undefined) state.pixelScale = parseFloat(view.ps) || 0;
 
   state.savedViews = cloneViewsMap(data.views);
+  if (Object.prototype.hasOwnProperty.call(data, "favorites")) {
+    state.favoriteFractals = cloneFavoriteMap(data.favorites);
+  }
   state.compare = {
     enabled: !!compare.enabled,
     lockCamera: compare.lockCamera !== false,
@@ -1055,6 +1209,7 @@ function updateUI() {
   const compareSupportsBasin = (compareFractal.meta.colorModes || []).includes("basin");
   ui.fractalName.textContent = f.name;
   ui.fractalSelect.value = String(state.fractalIdx);
+  updateFavoriteButton();
   ui.compareFractalSelect.value = String(compareFractal ? FRACTALS.indexOf(compareFractal) : 0);
   ui.compareColorStyle.value = String(state.compare.colorStyle);
   ui.formulaDisplay.value = getActiveFormulaText(f);
@@ -1570,6 +1725,16 @@ function previewEscape(fractalIdx, x, y) {
     } else if (formula === "cubicMandelbar") {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = -zy * (3 * x2 - y2) + cy;
+    } else if (formula === "cubicCeltic") {
+      const z3x = zx * (x2 - 3 * y2);
+      const z3y = zy * (3 * x2 - y2);
+      nx = Math.abs(z3x) + cx;
+      ny = z3y + cy;
+    } else if (formula === "cubicBuffalo") {
+      const z3x = zx * (x2 - 3 * y2);
+      const z3y = zy * (3 * x2 - y2);
+      nx = Math.abs(z3x) + cx;
+      ny = -Math.abs(z3y) + cy;
     } else if (formula === "quartic" || formula === "quarticJulia") {
       const qx = x2 - y2;
       const qy = 2 * xy;
@@ -2193,6 +2358,8 @@ const FORMULA_ID = {
   zubietaJulia: 35,
   orbitTrapStar: 36,
   orbitTrapWeb: 37,
+  cubicCeltic: 38,
+  cubicBuffalo: 39,
   newtonCubic: 40,
   newtonQuartic: 41,
   halleyCubic: 42,
@@ -2360,6 +2527,16 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     } else if (fid === 5) {
       nx = zx * (x2 - 3 * y2) + cx;
       ny = -zy * (3 * x2 - y2) + cy;
+    } else if (fid === 38) {
+      const z3x = zx * (x2 - 3 * y2);
+      const z3y = zy * (3 * x2 - y2);
+      nx = (z3x < 0 ? -z3x : z3x) + cx;
+      ny = z3y + cy;
+    } else if (fid === 39) {
+      const z3x = zx * (x2 - 3 * y2);
+      const z3y = zy * (3 * x2 - y2);
+      nx = (z3x < 0 ? -z3x : z3x) + cx;
+      ny = -(z3y < 0 ? -z3y : z3y) + cy;
     } else if (fid === 6) {
       const qx = x2 - y2;
       const qy = 2 * xy;
@@ -3335,6 +3512,14 @@ function updatePinch() {
   anchorTargetAtClient(mid.x, mid.y, gesture.pinchAnchorX, gesture.pinchAnchorY, nextScale);
 }
 
+function toggleFavoriteFractal(idx = state.fractalIdx) {
+  const key = String(clampFractalIndex(idx));
+  if (state.favoriteFractals[key]) delete state.favoriteFractals[key];
+  else state.favoriteFractals[key] = true;
+  renderFractalOptions();
+  saveSettings();
+}
+
 function switchFractal(direction = 1) {
   const currentNavIdx = fractalNavOrder.indexOf(state.fractalIdx);
   const navIdx = currentNavIdx >= 0 ? currentNavIdx : 0;
@@ -3358,6 +3543,7 @@ function selectFractal(idx, options = {}) {
   if (modes.includes("basin")) state.colorMode = COLOR_MODE_BASIN;
   else state.colorMode = COLOR_MODE_ESCAPE;
   restoreViewForFractal(state.fractalIdx);
+  renderFractalOptions();
   markDeepDirty(true);
   saveSettings();
 }
@@ -3601,6 +3787,13 @@ ui.fractalSelect.addEventListener("change", () => {
   const idx = parseInt(ui.fractalSelect.value, 10);
   if (Number.isInteger(idx) && idx >= 0 && idx < FRACTALS.length) selectFractal(idx);
 });
+ui.fractalSearch.addEventListener("input", renderFractalOptions);
+ui.btnClearFractalSearch.addEventListener("click", () => {
+  ui.fractalSearch.value = "";
+  renderFractalOptions();
+  ui.fractalSearch.focus();
+});
+ui.btnFavoriteFractal.addEventListener("click", () => toggleFavoriteFractal());
 ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
 ui.btnMobilePrev.addEventListener("click", () => switchFractal(-1));
 ui.btnMobileNext.addEventListener("click", () => switchFractal(1));
@@ -3800,6 +3993,7 @@ resize();
 resetView(0);
 loadSettings();
 loadFromParams();
+renderFractalOptions();
 if (state.tour.id && TOUR_MAP.has(state.tour.id)) {
   selectTour(state.tour.id, { stop: state.tour.stop, immediate: true, skipSave: true, keepPlaying: state.tour.playing });
 }

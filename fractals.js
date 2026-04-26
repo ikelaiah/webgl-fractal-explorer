@@ -403,6 +403,46 @@ void main() {
 }
 `;
 
+// -- Cubic Celtic -------------------------------------------------------------
+const cubicCelticFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    vec2 z3 = vec2(z.x * (x2 - 3.0 * y2), z.y * (3.0 * x2 - y2));
+    z = vec2(abs(z3.x), z3.y) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
+// -- Cubic Buffalo ------------------------------------------------------------
+const cubicBuffaloFrag = fragHeader + `
+void main() {
+  vec2 c = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 z = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    float x2 = z.x * z.x;
+    float y2 = z.y * z.y;
+    vec2 z3 = vec2(z.x * (x2 - 3.0 * y2), z.y * (3.0 * x2 - y2));
+    z = vec2(abs(z3.x), -abs(z3.y)) + c;
+    if (dot(z, z) > 256.0) break;
+    i += 1.0;
+  }
+  gl_FragColor = vec4(colorize(i, mi, z), 1.0);
+}
+`;
+
 // -- Quartic Multibrot --------------------------------------------------------
 const quarticMultibrotFrag = fragHeader + `
 void main() {
@@ -1526,6 +1566,8 @@ const FRACTALS = [
   { name: "Quartic Multibrot",   category: "Power",         src: quarticMultibrotFrag, center: [0.0,  0.0], scale: 3.0, julia: false, formula: "quartic" },
   { name: "Celtic Mandelbrot",   category: "Folded",        src: celticFrag,           center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celtic" },
   { name: "Buffalo",             category: "Folded",        src: buffaloFrag,          center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "buffalo" },
+  { name: "Cubic Celtic",        category: "Folded",        src: cubicCelticFrag,      center: [0.0, 0.0], scale: 3.0, julia: false, formula: "cubicCeltic" },
+  { name: "Cubic Buffalo",       category: "Folded",        src: cubicBuffaloFrag,     center: [0.0, -0.1], scale: 3.0, julia: false, formula: "cubicBuffalo" },
   { name: "Phoenix Julia",       category: "Julia",         src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true,  formula: "phoenix" },
   { name: "Phoenix Julia - Bloom", category: "Julia",       src: phoenixFrag,          center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.58, 0.42], formula: "phoenix" },
   { name: "Perpendicular Mandelbrot", category: "Perpendicular", src: perpendicularMandelbrotFrag, center: [0.0, 0.0], scale: 3.5, julia: false, formula: "perpendicularMandelbrot" },
@@ -1600,6 +1642,8 @@ const FORMULA_DISPLAY = Object.freeze({
   quartic: "z(n+1) = z(n)^4 + c",
   celtic: "z(n+1) = |Re(z(n)^2)| + iIm(z(n)^2) + c",
   buffalo: "z(n+1) = (|Re(z(n)^2)| + i|Im(z(n)^2)|) + c",
+  cubicCeltic: "z(n+1) = |Re(z(n)^3)| + iIm(z(n)^3) + c",
+  cubicBuffalo: "z(n+1) = |Re(z(n)^3)| - i|Im(z(n)^3)| + c",
   phoenix: "z(n+1) = z(n)^2 + p + q*z(n-1)",
   perpendicularMandelbrot: "z(n+1) = (Re(z(n)^2) + i|Im(z(n)^2)|) + c",
   celticHeart: "z(n+1) = |Re(z(n)^2)| + iIm(z(n)^2) + c",
@@ -1658,6 +1702,8 @@ const FORMULA_EXPLANATION = Object.freeze({
   quartic: "Fourth-power multibrots push the symmetry further and make the main bulbs feel more angular and star-like.",
   celtic: "Celtic variants fold only part of the quadratic term, which creates heart-like voids and pinched edge structures.",
   buffalo: "Buffalo-style folds apply absolute values to both quadratic components, producing dense, layered wings and knotted filaments.",
+  cubicCeltic: "A third-power Celtic fold that keeps the smoother multibrot symmetry while adding folded, pinched interior gaps.",
+  cubicBuffalo: "A third-power Buffalo fold that turns the cubic lobes into denser mirrored wings and heavier edge knots.",
   phoenix: "Phoenix adds memory through the previous iterate, so the orbit is shaped by both the current and prior state.",
   perpendicularMandelbrot: "Perpendicular variants selectively fold one quadratic component, which skews the usual Mandelbrot geometry into harsher boundary forms.",
   celticHeart: "This fold emphasizes the heart-shaped cavity that appears when the real part is reflected while the imaginary flow stays signed.",

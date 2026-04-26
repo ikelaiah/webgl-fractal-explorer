@@ -248,7 +248,8 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
-input[type="number"] {
+input[type="number"],
+input[type="search"] {
   width: 100%;
   min-width: 0;
   min-height: 34px;
@@ -269,6 +270,41 @@ select,
   background: rgba(255, 255, 255, 0.1);
   color: var(--text);
   padding: 0 10px;
+}
+
+.catalog-tools {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.catalog-tools > span:first-child {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.catalog-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 62px 62px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.catalog-search button {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.catalog-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .formula-panel {
@@ -371,7 +407,8 @@ select,
   font-size: 0.78rem;
 }
 
-select:focus-visible {
+select:focus-visible,
+input[type="search"]:focus-visible {
   border-color: rgba(125, 240, 192, 0.75);
   outline: none;
 }
@@ -758,8 +795,28 @@ button.active {
   }
 
   .control-grid > label,
-  .formula-row {
+  .formula-row,
+  .catalog-tools {
     grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .catalog-tools {
+    grid-template-areas:
+      "label controls"
+      ". meta";
+  }
+
+  .catalog-tools > span:first-child {
+    grid-area: label;
+  }
+
+  .catalog-search {
+    grid-area: controls;
+    grid-template-columns: minmax(0, 1fr) 58px 58px;
+  }
+
+  .catalog-meta {
+    grid-area: meta;
   }
 
   .tour-select-row {
@@ -802,6 +859,7 @@ button.active {
   }
 
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .control-grid > label,
+  .hud[data-mobile-state="open"][data-mobile-tab="formula"] .catalog-tools,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .buttons,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .tour-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .inspector-panel,
@@ -861,6 +919,7 @@ button.active {
 
   .control-grid > label,
   .formula-row,
+  .catalog-tools,
   .composer-row,
   .composer-step,
   .tour-select-row,
@@ -872,8 +931,20 @@ button.active {
 
   button,
   select,
-  input[type="number"] {
+  input[type="number"],
+  input[type="search"] {
     min-height: 42px;
+  }
+
+  .catalog-tools {
+    grid-template-areas:
+      "label"
+      "controls"
+      "meta";
+  }
+
+  .catalog-search {
+    grid-template-columns: minmax(0, 1fr) 64px 64px;
   }
 
   .tour-actions,

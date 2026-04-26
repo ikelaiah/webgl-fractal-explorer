@@ -2,6 +2,24 @@
 
 All notable changes to WebGL Fractal Explorer are documented here.
 
+## [1.3.7] — 2026-04-26
+
+### Performance and UX
+
+- Added catalog search for quicker fractal switching across the larger registry
+- Added saved fractals with session persistence and a dedicated Saved dropdown group
+- Kept filtered next/previous navigation aligned with the visible catalog results
+
+### Catalog Polish
+
+- Added Julia Showcase and Orbit Trap Gallery tours for more curated entry points into existing fractals
+- Updated catalog counts and documentation for 68 fractals
+
+### Fractals
+
+- Added Cubic Celtic and Cubic Buffalo shader-native formulas
+- Added matching minimap and CPU refinement branches for the new formulas
+
 ## [1.3.6] — 2026-04-25
 
 ### Mobile UI
