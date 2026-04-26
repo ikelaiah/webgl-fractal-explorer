@@ -560,7 +560,8 @@ button.active {
   gap: 8px;
 }
 
-.inspector-panel {
+.inspector-panel,
+.profiler-panel {
   display: grid;
   gap: 10px;
   margin-top: 16px;
@@ -568,39 +569,45 @@ button.active {
   border-top: 1px solid var(--line);
 }
 
-.inspector-header {
+.inspector-header,
+.profiler-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
 }
 
-#inspectorBackend {
+#inspectorBackend,
+#profileBudget {
   color: var(--muted);
   font-size: 0.75rem;
 }
 
-.inspector-grid {
+.inspector-grid,
+.profiler-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
-.inspector-grid div {
+.inspector-grid div,
+.profiler-grid div {
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
 }
 
-.inspector-grid span {
+.inspector-grid span,
+.profiler-grid span {
   display: block;
   color: var(--muted);
   font-size: 0.72rem;
   text-transform: uppercase;
 }
 
-.inspector-grid strong {
+.inspector-grid strong,
+.profiler-grid strong {
   display: block;
   margin-top: 5px;
   font-size: 0.8rem;
@@ -608,7 +615,8 @@ button.active {
   word-break: break-word;
 }
 
-.inspector-summary {
+.inspector-summary,
+.profiler-summary {
   margin: 0;
   color: var(--text);
   font-size: 0.82rem;
@@ -705,6 +713,7 @@ button.active {
   .hud[data-mobile-state="compact"] .buttons,
   .hud[data-mobile-state="compact"] .tour-panel,
   .hud[data-mobile-state="compact"] .inspector-panel,
+  .hud[data-mobile-state="compact"] .profiler-panel,
   .hud[data-mobile-state="compact"] .compare-panel {
     display: none;
   }
@@ -832,7 +841,8 @@ button.active {
     grid-template-columns: 58px minmax(0, 1fr);
   }
 
-  .inspector-grid {
+  .inspector-grid,
+  .profiler-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -854,6 +864,7 @@ button.active {
   .hud[data-mobile-state="open"][data-mobile-tab="explore"] .composer-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="explore"] .tour-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="explore"] .inspector-panel,
+  .hud[data-mobile-state="open"][data-mobile-tab="explore"] .profiler-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="explore"] .compare-panel {
     display: none;
   }
@@ -863,6 +874,7 @@ button.active {
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .buttons,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .tour-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .inspector-panel,
+  .hud[data-mobile-state="open"][data-mobile-tab="formula"] .profiler-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="formula"] .compare-panel {
     display: none !important;
   }
@@ -870,6 +882,7 @@ button.active {
   .hud[data-mobile-state="open"][data-mobile-tab="tours"] .control-grid,
   .hud[data-mobile-state="open"][data-mobile-tab="tours"] .buttons,
   .hud[data-mobile-state="open"][data-mobile-tab="tours"] .inspector-panel,
+  .hud[data-mobile-state="open"][data-mobile-tab="tours"] .profiler-panel,
   .hud[data-mobile-state="open"][data-mobile-tab="tours"] .compare-panel {
     display: none;
   }
@@ -952,7 +965,8 @@ button.active {
     gap: 6px;
   }
 
-  .inspector-grid {
+  .inspector-grid,
+  .profiler-grid {
     grid-template-columns: 1fr;
   }
 }

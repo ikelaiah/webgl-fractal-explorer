@@ -56,7 +56,9 @@ function getProgram(idx) {
   // Shaders are compiled lazily so adding many fractals does not make startup
   // pay for every program before the user visits it.
   if (programs[idx]) return programs[idx];
+  const compileStart = performance.now();
   const prog = buildProgram(FRACTALS[idx].src);
+  recordShaderCompile(idx, performance.now() - compileStart);
   programs[idx] = {
     prog,
     loc: {
@@ -142,6 +144,14 @@ const ui = {
   inspectPerturb: document.getElementById("inspectPerturb"),
   inspectOrbit: document.getElementById("inspectOrbit"),
   inspectSummary: document.getElementById("inspectSummary"),
+  profileBudget: document.getElementById("profileBudget"),
+  profileFrameMs: document.getElementById("profileFrameMs"),
+  profileSubmitMs: document.getElementById("profileSubmitMs"),
+  profileFormulaMs: document.getElementById("profileFormulaMs"),
+  profileShaderMs: document.getElementById("profileShaderMs"),
+  profileRefineMs: document.getElementById("profileRefineMs"),
+  profileWorkers: document.getElementById("profileWorkers"),
+  profileHint: document.getElementById("profileHint"),
   btnHideHud:  document.getElementById("btnHideHud"),
   btnShowHud:  document.getElementById("btnShowHud"),
   btnSheetHandle: document.getElementById("btnSheetHandle"),
@@ -800,6 +810,23 @@ const cpuRender = {
   },
 };
 
+const perfStats = {
+  frameMs: 0,
+  submitMs: 0,
+  submitFrameMs: 0,
+  lastSubmitMs: 0,
+  compiledPrograms: 0,
+  lastCompileMs: 0,
+  activeCompileMs: 0,
+  slowestCompileMs: 0,
+  slowestCompileName: "",
+  cpuStartedAt: 0,
+  cpuLastMs: 0,
+  cpuLastPreviewMs: 0,
+  cpuLastBackend: "gpu",
+  formulaSubmit: FRACTALS.map(() => ({ samples: 0, avgMs: 0, maxMs: 0 })),
+};
+
 function viewBoundsForFractal(idx = state.fractalIdx) {
   // Most fractals fit a square extent, but wide formulas such as Mandelbox can
   // override the initial camera with explicit bounds.
@@ -1334,6 +1361,7 @@ function updateUI() {
   ui.compareSummary.textContent = state.compare.enabled
     ? `Left: ${f.name}. Right: ${compareFractal.name}. Shared camera, split-screen GPU compare. CPU refine is paused while compare is active.`
     : "Split-screen compare uses the same camera on both halves so formulas and coloring can be judged directly.";
+  updateProfilerUI();
 }
 
 function formatZoom(zoom) {
@@ -1522,7 +1550,94 @@ function getRenderIterations() {
   return Math.max(MIN_ITER, Math.min(MAX_ITER, requested + zoomBoost));
 }
 
+function smoothMetric(current, sample, weight = 0.12) {
+  if (!Number.isFinite(sample)) return current || 0;
+  if (!current) return sample;
+  return current + (sample - current) * weight;
+}
+
+function formatProfilerMs(value) {
+  if (!Number.isFinite(value) || value <= 0) return "0 ms";
+  if (value >= 1000) return `${(value / 1000).toFixed(2)} s`;
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ms`;
+}
+
+function formatProfilerPercent(value) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.max(0, Math.min(100, value)).toFixed(0)}%`;
+}
+
+function recordShaderCompile(idx, compileMs) {
+  perfStats.compiledPrograms++;
+  perfStats.lastCompileMs = compileMs;
+  perfStats.activeCompileMs = idx === state.fractalIdx ? compileMs : perfStats.activeCompileMs;
+  if (compileMs > perfStats.slowestCompileMs) {
+    perfStats.slowestCompileMs = compileMs;
+    perfStats.slowestCompileName = FRACTALS[idx]?.name || "Unknown";
+  }
+}
+
+function recordSceneSubmit(idx, submitMs) {
+  perfStats.lastSubmitMs = submitMs;
+  perfStats.submitFrameMs += submitMs;
+  const entry = perfStats.formulaSubmit[idx];
+  if (!entry) return;
+  entry.samples++;
+  entry.avgMs = smoothMetric(entry.avgMs, submitMs, 0.10);
+  entry.maxMs = Math.max(entry.maxMs, submitMs);
+}
+
+function cpuProgressPercent() {
+  if (!cpuRender.running || !cpuRender.totalBlocks) return cpuRender.complete ? 100 : 0;
+  const blockCursor = cpuRender.useWorkers ? cpuRender.nextBatchBlock : cpuRender.blockIndex;
+  const passProgress = Math.max(0, Math.min(1, blockCursor / cpuRender.totalBlocks));
+  const passCount = cpuRender.previewOnly ? 1 : CPU_PASSES.length;
+  return ((cpuRender.passIndex + passProgress) / passCount) * 100;
+}
+
+function profilerRefineLabel() {
+  if (state.compare.enabled) return "Paused";
+  if (!state.cpuRefine) return "Off";
+  if (!currentViewSupportsCpuRefinement()) return "GPU only";
+  if (getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return "Waiting";
+  if (cpuRender.running) return `${formatProfilerPercent(cpuProgressPercent())}`;
+  if (cpuRender.complete && perfStats.cpuLastMs) return formatProfilerMs(perfStats.cpuLastMs);
+  if (perfStats.cpuLastPreviewMs) return `Preview ${formatProfilerMs(perfStats.cpuLastPreviewMs)}`;
+  return "Idle";
+}
+
+function profilerHint() {
+  const activeFormula = perfStats.formulaSubmit[state.fractalIdx];
+  if (!programs[state.fractalIdx]) return "First visit to this formula will include a shader compile spike.";
+  if (state.compare.enabled) return "Compare mode submits two shader views per frame; disable it when profiling one formula.";
+  if (cpuRender.running) return `CPU ${cpuRender.previewOnly ? "preview" : "refine"} pass ${cpuRender.passIndex + 1}/${cpuRender.previewOnly ? 1 : CPU_PASSES.length}, step ${cpuRender.step}.`;
+  if (perfStats.frameMs > 24) return "Frame time is above budget. Lower iterations, disable compare, or avoid heavy formulas while navigating.";
+  if (perfStats.submitMs > 8) return "WebGL submit time is high on this frame; shader complexity or canvas size may be the bottleneck.";
+  if (activeFormula && activeFormula.avgMs > 4) return `${FRACTALS[state.fractalIdx].name} has a higher submit average than most formulas in this session.`;
+  if (state.cpuRefine && getZoom() < CPU_PREVIEW_ZOOM_THRESHOLD) return "CPU refinement waits until deeper zooms so shallow navigation stays on the GPU.";
+  return "Target is 16.7 ms per frame for 60 FPS. Watch Submit for shader/UI cost and Refine for CPU overlay cost.";
+}
+
+function updateProfilerUI() {
+  if (!ui.profileFrameMs) return;
+  const activeFormula = perfStats.formulaSubmit[state.fractalIdx] || { avgMs: 0 };
+  const workers = cpuRender.running
+    ? (cpuRender.useWorkers ? `x${cpuRender.workers.length}` : "main")
+    : (state.cpuRefine ? getRenderModeLabel() : "off");
+  ui.profileFrameMs.textContent = formatProfilerMs(perfStats.frameMs);
+  ui.profileSubmitMs.textContent = formatProfilerMs(perfStats.submitMs);
+  ui.profileFormulaMs.textContent = formatProfilerMs(activeFormula.avgMs);
+  ui.profileShaderMs.textContent = perfStats.lastCompileMs
+    ? `${formatProfilerMs(perfStats.lastCompileMs)} / ${perfStats.compiledPrograms}`
+    : `0 ms / ${perfStats.compiledPrograms}`;
+  ui.profileRefineMs.textContent = profilerRefineLabel();
+  ui.profileWorkers.textContent = workers;
+  ui.profileBudget.textContent = perfStats.frameMs > 16.7 ? "Over 60 FPS budget" : "60 FPS target";
+  ui.profileHint.textContent = profilerHint();
+}
+
 function drawScene(scene, viewportRect) {
+  const submitStart = performance.now();
   const { prog, loc } = getProgram(scene.fractalIdx);
   const viewport = renderViewportForView({
     width: viewportRect.width,
@@ -1551,6 +1666,7 @@ function drawScene(scene, viewportRect) {
   gl.uniform1i(loc.colorMode, scene.colorMode);
   gl.uniform1i(loc.colorStyle, scene.colorStyle);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+  recordSceneSubmit(scene.fractalIdx, performance.now() - submitStart);
 }
 
 // ─── Minimap ─────────────────────────────────────────────────────────────────
@@ -3266,6 +3382,8 @@ function startCpuRender() {
   cpuRender.blockIndex = 0;
   cpuRender.snapshot = makeCpuSnapshot();
   resetCpuDiagnostics(cpuRender.snapshot);
+  perfStats.cpuStartedAt = performance.now();
+  perfStats.cpuLastBackend = cpuRender.snapshot.backend;
   cpuRender.lastPaint = 0;
   cpuRender.useWorkers = ensureCpuWorkers();
   setupCpuPass();
@@ -3291,6 +3409,8 @@ function startCpuPreview() {
   cpuRender.blockIndex = 0;
   cpuRender.snapshot = makeCpuSnapshot();
   resetCpuDiagnostics(cpuRender.snapshot);
+  perfStats.cpuStartedAt = performance.now();
+  perfStats.cpuLastBackend = cpuRender.snapshot.backend;
   cpuRender.lastPaint = 0;
   cpuRender.useWorkers = ensureCpuWorkers();
   setupCpuPass();
@@ -3308,6 +3428,17 @@ function setupCpuPass() {
   cpuRender.nextBatchBlock = 0;
   cpuRender.pendingBatches = 0;
   cpuRender.totalBlocks = cpuRender.cols * cpuRender.rows;
+}
+
+function finishCpuRenderRun(complete) {
+  const elapsed = perfStats.cpuStartedAt ? performance.now() - perfStats.cpuStartedAt : 0;
+  cpuRender.running = false;
+  cpuRender.complete = complete;
+  if (cpuRender.previewOnly) {
+    perfStats.cpuLastPreviewMs = elapsed;
+  } else if (complete) {
+    perfStats.cpuLastMs = elapsed;
+  }
 }
 
 function paintCpuBlock(blockIndex) {
@@ -3442,8 +3573,7 @@ function finishCpuWorkerPassIfDone() {
   presentCpuImageData();
   cpuRender.passIndex++;
   if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
-    cpuRender.running = false;
-    cpuRender.complete = !cpuRender.previewOnly;
+    finishCpuRenderRun(!cpuRender.previewOnly);
     return;
   }
   setupCpuPass();
@@ -3465,8 +3595,7 @@ function processCpuRenderMain(generation) {
       presentCpuImageData();
       cpuRender.passIndex++;
       if (cpuRender.passIndex >= CPU_PASSES.length || cpuRender.previewOnly) {
-        cpuRender.running = false;
-        cpuRender.complete = !cpuRender.previewOnly;
+        finishCpuRenderRun(!cpuRender.previewOnly);
         return;
       }
       setupCpuPass();
@@ -3976,7 +4105,10 @@ function render(now) {
   // Frame order: update dimensions/input/camera, draw the GPU base layer, draw
   // lightweight overlays, then optionally kick off deferred CPU refinement.
   resize();
-  const dt = Math.min(0.05, (now - state.lastTime) * 0.001);
+  const frameMs = now - state.lastTime;
+  perfStats.frameMs = smoothMetric(perfStats.frameMs, frameMs, 0.12);
+  perfStats.submitFrameMs = 0;
+  const dt = Math.min(0.05, frameMs * 0.001);
   state.lastTime = now;
 
   applyKeyboard(dt);
@@ -4057,6 +4189,7 @@ function render(now) {
     });
   }
   gl.disable(gl.SCISSOR_TEST);
+  perfStats.submitMs = smoothMetric(perfStats.submitMs, perfStats.submitFrameMs, 0.14);
   drawMinimap();
   maybeStartCpuRender(now);
   requestAnimationFrame(render);

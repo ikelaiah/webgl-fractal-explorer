@@ -12,6 +12,7 @@ All notable changes to WebGL Fractal Explorer are documented here.
 - Added 4-second guided-tour camera transitions with an 8-second post-arrival stay while keeping manual navigation responsive
 - Fixed idle keyboard polling cancelling guided-tour camera transitions
 - Removed WASD camera panning and suppressed global shortcuts while typing in form fields
+- Added a Profiler panel for frame timing, WebGL submit cost, shader compile spikes, CPU refinement progress, and worker/backend state
 
 ### Catalog Polish
 

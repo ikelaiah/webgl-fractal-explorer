@@ -203,6 +203,40 @@
           <p id="inspectSummary" class="inspector-summary">The inspector explains the active fractal, render backend, and current camera state.</p>
         </section>
 
+        <section class="profiler-panel" aria-label="Performance profiler">
+          <div class="profiler-header">
+            <strong>Profiler</strong>
+            <span id="profileBudget">60 FPS target</span>
+          </div>
+          <div class="profiler-grid">
+            <div>
+              <span>Frame</span>
+              <strong id="profileFrameMs">0 ms</strong>
+            </div>
+            <div>
+              <span>Submit</span>
+              <strong id="profileSubmitMs">0 ms</strong>
+            </div>
+            <div>
+              <span>Formula</span>
+              <strong id="profileFormulaMs">0 ms</strong>
+            </div>
+            <div>
+              <span>Shader</span>
+              <strong id="profileShaderMs">0 ms</strong>
+            </div>
+            <div>
+              <span>Refine</span>
+              <strong id="profileRefineMs">Idle</strong>
+            </div>
+            <div>
+              <span>Workers</span>
+              <strong id="profileWorkers">0</strong>
+            </div>
+          </div>
+          <p id="profileHint" class="profiler-summary">Profiler data appears as you move, switch formulas, and run CPU refinement.</p>
+        </section>
+
         <section class="compare-panel" aria-label="Compare mode">
           <div class="compare-header">
             <strong>Compare</strong>

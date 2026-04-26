@@ -29,6 +29,7 @@ Explore dozens of fractal families, follow guided tours, compare formulas side-b
 - 🧪 **Perturbation-assisted Mandelbrot refinement** with diagnostics for reference orbit length and fallback sampling
 - 🧭 **Guided tours** with curated stops, playback controls, and shareable route state
 - 🪟 **Split-screen compare mode** with a shared camera and independent fractal/tone controls
+- 📊 **Profiler panel** for frame timing, WebGL submit cost, shader compile spikes, CPU refinement progress, and worker/backend state
 - 📤 **PNG export** plus copyable active formulas and URL sharing
 - 🎨 **5 accent palettes** with cosine, monotone, and duotone rendering styles plus adjustable cycle offset
 - 🌈 **Basin coloring** for Newton/Halley fractals (3- and 4-root variants)
@@ -90,6 +91,7 @@ Additional controls in the HUD panel:
 - **Export** — save the composed view as PNG
 - **Tours** — pick curated routes and step or play through notable regions
 - **Inspector** — read camera coordinates, render mode, perturbation health, and reference orbit status
+- **Profiler** — watch frame timing, shader submit cost, compile spikes, CPU refine progress, and worker/backend state
 - **Compare** — split the viewport between two fractals using the same camera
 
 ## 🛠️ Implementation Notes
