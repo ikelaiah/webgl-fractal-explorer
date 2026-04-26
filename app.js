@@ -212,8 +212,9 @@ const MOBILE_QUERY = window.matchMedia("(max-width: 720px)");
 const COLOR_STYLE_PALETTE = 0;
 const COLOR_STYLE_MONOTONE = 1;
 const COLOR_STYLE_DUOTONE = 2;
-const TOUR_ADVANCE_DELAY_MS = 3200;
+const TOUR_ADVANCE_DELAY_MS = 8000;
 const TOUR_STOP_SETTLE_MS = 700;
+const TOUR_TRANSITION_MS = 4000;
 
 const state = {
   // Camera movement uses a current value plus a target value. Input changes the
@@ -395,6 +396,17 @@ const TOUR_MAP = new Map(TOURS.map(tour => [tour.id, tour]));
 const tourPlayback = {
   lastSettledAt: 0,
   lastAdvancedAt: 0,
+};
+const tourCameraTransition = {
+  active: false,
+  startTime: 0,
+  duration: TOUR_TRANSITION_MS,
+  fromX: 0,
+  fromY: 0,
+  fromScale: 0,
+  toX: 0,
+  toY: 0,
+  toScale: 0,
 };
 TOURS.forEach(tour => {
   const option = document.createElement("option");
@@ -807,9 +819,10 @@ function resetView(idx) {
   setCameraTarget(bounds.cx, bounds.cy, pixelScale, true);
 }
 
-function setCameraTarget(cx, cy, pixelScale, immediate = false) {
+function setCameraTarget(cx, cy, pixelScale, immediate = false, options = {}) {
   // All camera mutations flow through this function so the CPU overlay can be
   // invalidated whenever the view changes.
+  if (!options.keepTourTransition) cancelTourCameraTransition();
   const fallbackBounds = viewBoundsForFractal(state.fractalIdx);
   const fallback = Math.max(
     fallbackBounds.width / Math.max(canvas.width || 800, 1),
@@ -841,18 +854,65 @@ function syncTargetToCurrent() {
   setCameraTarget(state.centerX, state.centerY, state.pixelScale, true);
 }
 
+function cancelTourCameraTransition() {
+  tourCameraTransition.active = false;
+}
+
+function smoothTourProgress(t) {
+  return t < 0.5
+    ? 4 * t * t * t
+    : 1 - Math.pow(-2 * t + 2, 3) * 0.5;
+}
+
+function startTourCameraTransition(cx, cy, pixelScale, duration = TOUR_TRANSITION_MS) {
+  if (!state.pixelScale || !state.targetPixelScale) {
+    setCameraTarget(cx, cy, pixelScale, true);
+    return;
+  }
+  setCameraTarget(cx, cy, pixelScale, false, { keepTourTransition: true });
+  tourCameraTransition.active = true;
+  tourCameraTransition.startTime = performance.now();
+  tourCameraTransition.duration = Math.max(TOUR_TRANSITION_MS, duration || 0);
+  tourCameraTransition.fromX = state.centerX;
+  tourCameraTransition.fromY = state.centerY;
+  tourCameraTransition.fromScale = state.pixelScale;
+  tourCameraTransition.toX = state.targetCenterX;
+  tourCameraTransition.toY = state.targetCenterY;
+  tourCameraTransition.toScale = state.targetPixelScale;
+}
+
+function updateTourCameraTransition(now) {
+  if (!tourCameraTransition.active) return false;
+  const elapsed = now - tourCameraTransition.startTime;
+  const t = Math.min(1, Math.max(0, elapsed / tourCameraTransition.duration));
+  const eased = smoothTourProgress(t);
+  state.centerX = tourCameraTransition.fromX + (tourCameraTransition.toX - tourCameraTransition.fromX) * eased;
+  state.centerY = tourCameraTransition.fromY + (tourCameraTransition.toY - tourCameraTransition.fromY) * eased;
+  const fromLog = Math.log(tourCameraTransition.fromScale);
+  const toLog = Math.log(tourCameraTransition.toScale);
+  state.pixelScale = Math.exp(fromLog + (toLog - fromLog) * eased);
+  if (t >= 1) {
+    tourCameraTransition.active = false;
+    state.centerX = state.targetCenterX;
+    state.centerY = state.targetCenterY;
+    state.pixelScale = state.targetPixelScale;
+  }
+  return true;
+}
+
 function cameraSettleTolerance(center, target, viewWidth) {
   const numericFloor = Math.max(1, Math.abs(center), Math.abs(target)) * CAMERA_SETTLE_EPS;
   return Math.max(viewWidth * 1e-7, numericFloor);
 }
 
-function nudgeCamera(dt) {
+function nudgeCamera(dt, now = performance.now()) {
   // Easing in log(scale) space makes zoom animation feel linear to the eye.
   if (!state.targetPixelScale) return;
   if (!state.pixelScale) {
     syncTargetToCurrent();
     return;
   }
+  if (updateTourCameraTransition(now)) return;
 
   const alpha = 1 - Math.exp(-dt * CAMERA_EASE);
   state.centerX += (state.targetCenterX - state.centerX) * alpha;
@@ -1049,7 +1109,11 @@ function applyTourStop(index, options = {}) {
   if (stop.fractalIdx !== state.fractalIdx) {
     selectFractal(stop.fractalIdx, { preserveTour: true });
   }
-  setCameraTarget(stop.cx, stop.cy, stop.ps, options.immediate === true);
+  if (options.immediate === true) {
+    setCameraTarget(stop.cx, stop.cy, stop.ps, true);
+  } else {
+    startTourCameraTransition(stop.cx, stop.cy, stop.ps, options.transitionMs);
+  }
   markMinimapDirty();
   markDeepDirty(true);
   if (!options.skipSave) saveSettings();
@@ -1105,7 +1169,7 @@ function updateTourPlayback(now) {
     return;
   }
   if (now - tourPlayback.lastSettledAt < TOUR_STOP_SETTLE_MS) return;
-  if (now - tourPlayback.lastAdvancedAt < TOUR_ADVANCE_DELAY_MS) return;
+  if (now - tourPlayback.lastSettledAt < TOUR_ADVANCE_DELAY_MS) return;
   stepTour(1);
 }
 
@@ -2133,6 +2197,7 @@ function updateDeepOverlayTransform() {
 }
 
 function isCameraSettled() {
+  if (tourCameraTransition.active) return false;
   if (!state.pixelScale || !state.targetPixelScale) return false;
   const viewWidth = Math.max(state.pixelScale * canvas.width, Number.MIN_VALUE);
   const xTolerance = cameraSettleTolerance(state.centerX, state.targetCenterX, viewWidth);
@@ -3767,8 +3832,16 @@ canvas.addEventListener("wheel", e => {
   saveSettings();
 }, { passive: false });
 
+function isEditableKeyTarget(target) {
+  return target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    !!target?.isContentEditable;
+}
+
 const keys = {};
 window.addEventListener("keydown", e => {
+  if (isEditableKeyTarget(e.target)) return;
   keys[e.code] = true;
   if (e.code === "KeyF") switchFractal(e.shiftKey ? -1 : 1);
   if (e.code === "KeyP") { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); }
@@ -3875,12 +3948,14 @@ function applyKeyboard(dt) {
   let cx = state.targetCenterX;
   let cy = state.targetCenterY;
   let ps = state.targetPixelScale;
-  if (keys["ArrowLeft"]  || keys["KeyA"]) cx -= panSpeed;
-  if (keys["ArrowRight"] || keys["KeyD"]) cx += panSpeed;
-  if (keys["ArrowUp"]    || keys["KeyW"]) cy += panSpeed;
-  if (keys["ArrowDown"]  || keys["KeyS"]) cy -= panSpeed;
-  if (keys["Equal"] || keys["NumpadAdd"])      ps /= zoomSpeed;
-  if (keys["Minus"] || keys["NumpadSubtract"]) ps *= zoomSpeed;
+  let changed = false;
+  if (keys["ArrowLeft"]) { cx -= panSpeed; changed = true; }
+  if (keys["ArrowRight"]) { cx += panSpeed; changed = true; }
+  if (keys["ArrowUp"]) { cy += panSpeed; changed = true; }
+  if (keys["ArrowDown"]) { cy -= panSpeed; changed = true; }
+  if (keys["Equal"] || keys["NumpadAdd"]) { ps /= zoomSpeed; changed = true; }
+  if (keys["Minus"] || keys["NumpadSubtract"]) { ps *= zoomSpeed; changed = true; }
+  if (!changed) return;
   setCameraTarget(cx, cy, ps);
 }
 
@@ -3905,7 +3980,7 @@ function render(now) {
   state.lastTime = now;
 
   applyKeyboard(dt);
-  nudgeCamera(dt);
+  nudgeCamera(dt, now);
   updateDeepOverlayTransform();
 
   state.fpsFrames++;

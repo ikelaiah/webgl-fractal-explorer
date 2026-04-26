@@ -72,7 +72,7 @@ Explore dozens of fractal families, follow guided tours, compare formulas side-b
 | `R` | Reset view |
 | `C` | Copy share link |
 | `H` | Hide/show controls panel |
-| `W` / `A` / `S` / `D` or arrow keys | Pan |
+| Arrow keys | Pan |
 | `+` / `-` | Zoom in/out |
 
 Additional controls in the HUD panel:
