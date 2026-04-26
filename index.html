@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WebGL Fractal Explorer</title>
-    <link rel="stylesheet" href="styles.css?v=1.3.7">
+    <link rel="stylesheet" href="styles.css?v=1.3.8">
   </head>
   <body>
     <main class="shell">
@@ -31,8 +31,14 @@
           <button id="btnMobilePrev" type="button" title="Previous fractal">&lt;</button>
           <button id="btnMobileNext" type="button" title="Next fractal">&gt;</button>
           <button id="btnMobilePalette" type="button" title="Change palette">Palette</button>
-          <button id="btnMobileRefine" type="button" title="Toggle CPU refinement">Refine</button>
+          <button id="btnMobileReset" type="button" title="Reset view">Reset</button>
           <button id="btnMobileControls" type="button" title="Open controls" aria-controls="mobileControlTabs" aria-expanded="false">Controls</button>
+        </div>
+
+        <div class="mobile-hints" aria-label="Input hints">
+          <span>Drag to pan</span>
+          <span>Pinch to zoom</span>
+          <span>Tap Controls for tools</span>
         </div>
 
         <div class="readouts">
@@ -82,13 +88,13 @@
               <button id="btnCopyFormula" type="button" title="Copy active formula">Copy</button>
             </div>
           </div>
-          <section class="composer-panel" aria-label="Formula composer">
-            <div class="composer-header">
+          <details class="composer-panel collapsible-panel" aria-label="Formula composer">
+            <summary class="panel-summary">
               <strong>Composer</strong>
-              <div class="composer-header-actions">
-                <button id="btnComposerReset" type="button" title="Reset composer">Reset</button>
-                <button id="btnComposerUse" type="button" title="Use composed formula">Use</button>
-              </div>
+            </summary>
+            <div class="composer-header-actions">
+              <button id="btnComposerReset" type="button" title="Reset composer">Reset</button>
+              <button id="btnComposerUse" type="button" title="Use composed formula">Use</button>
             </div>
             <label class="composer-row">
               <span>Mode</span>
@@ -100,7 +106,7 @@
             <div id="composerStack" class="composer-stack" aria-label="Composer operations"></div>
             <p id="composerSummary" class="composer-summary">Mandelbrot start: z = z^2 + c</p>
             <p class="composer-note">GPU preview only. CPU refinement and perturbation are unavailable for composed formulas.</p>
-          </section>
+          </details>
           <label class="control-iterations">
             <span>Iterations</span>
             <div class="slider-row">
@@ -170,10 +176,10 @@
           </div>
         </section>
 
-        <section class="inspector-panel" aria-label="Explorer inspector">
-          <div class="inspector-header">
+        <details class="inspector-panel collapsible-panel" aria-label="Explorer inspector">
+          <summary class="panel-summary">
             <strong>Inspector</strong>
-          </div>
+          </summary>
           <div class="inspector-grid">
             <div>
               <span>X</span>
@@ -201,13 +207,13 @@
             </div>
           </div>
           <p id="inspectSummary" class="inspector-summary">The inspector explains the active fractal, render backend, and current camera state.</p>
-        </section>
+        </details>
 
-        <section class="profiler-panel" aria-label="Performance profiler">
-          <div class="profiler-header">
+        <details class="profiler-panel collapsible-panel" aria-label="Performance profiler">
+          <summary class="panel-summary">
             <strong>Profiler</strong>
             <span id="profileBudget">60 FPS target</span>
-          </div>
+          </summary>
           <div class="profiler-grid">
             <div>
               <span>Frame</span>
@@ -235,13 +241,14 @@
             </div>
           </div>
           <p id="profileHint" class="profiler-summary">Profiler data appears as you move, switch formulas, and run CPU refinement.</p>
-        </section>
+        </details>
 
-        <section class="compare-panel" aria-label="Compare mode">
-          <div class="compare-header">
+        <details class="compare-panel collapsible-panel" aria-label="Compare mode">
+          <summary class="panel-summary">
             <strong>Compare</strong>
-            <button id="btnCompareToggle" type="button" title="Toggle compare mode">Off</button>
-          </div>
+            <span id="compareStateLabel">Off</span>
+          </summary>
+          <button id="btnCompareToggle" type="button" title="Toggle compare mode">Compare Off</button>
           <label class="compare-row">
             <span>Fractal</span>
             <select id="compareFractalSelect" aria-label="Choose compare fractal"></select>
@@ -259,7 +266,7 @@
             <button id="btnCompareColorMode" type="button" title="Toggle compare basin color mode">Escape</button>
           </div>
           <p id="compareSummary" class="compare-summary">Split-screen compare uses the same camera on both halves so formulas and coloring can be judged directly.</p>
-        </section>
+        </details>
       </section>
 
       <button id="btnShowHud" type="button" class="show-hud-btn" title="Show controls (H)" aria-label="Show controls panel" hidden>&#9776;</button>
@@ -278,7 +285,7 @@
       </section>
     </main>
 
-    <script src="fractals.js?v=1.3.7"></script>
-    <script src="app.js?v=1.3.7"></script>
+    <script src="fractals.js?v=1.3.8"></script>
+    <script src="app.js?v=1.3.8"></script>
   </body>
 </html>

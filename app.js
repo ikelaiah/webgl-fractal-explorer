@@ -124,6 +124,7 @@ const ui = {
   btnCopyFormula: document.getElementById("btnCopyFormula"),
   btnShare:    document.getElementById("btnShare"),
   btnCompareToggle: document.getElementById("btnCompareToggle"),
+  compareStateLabel: document.getElementById("compareStateLabel"),
   compareFractalSelect: document.getElementById("compareFractalSelect"),
   compareColorStyle: document.getElementById("compareColorStyle"),
   btnComparePalette: document.getElementById("btnComparePalette"),
@@ -158,7 +159,7 @@ const ui = {
   btnMobilePrev: document.getElementById("btnMobilePrev"),
   btnMobileNext: document.getElementById("btnMobileNext"),
   btnMobilePalette: document.getElementById("btnMobilePalette"),
-  btnMobileRefine: document.getElementById("btnMobileRefine"),
+  btnMobileReset: document.getElementById("btnMobileReset"),
   btnMobileControls: document.getElementById("btnMobileControls"),
   mobileTabs:  Array.from(document.querySelectorAll(".mobile-tab")),
   iterValue:   document.getElementById("iterValue"),
@@ -1312,7 +1313,7 @@ function updateUI() {
   syncJuliaParamInputs();
   ui.iterReadout.textContent = getRenderIterations();
   ui.modeReadout.textContent = getRenderModeLabel();
-  ui.btnRefine.textContent = f.meta.gpuOnly ? "GPU Only" : (state.cpuRefine ? "Refine ON" : "Refine");
+  ui.btnRefine.textContent = f.meta.gpuOnly ? "GPU Only" : (state.cpuRefine ? "Refine On" : "Refine Off");
   ui.btnRefine.title = f.meta.gpuOnly
     ? "CPU refinement is unavailable for generated formulas"
     : state.cpuRefine
@@ -1320,17 +1321,13 @@ function updateUI() {
       : "Toggle CPU refinement";
   ui.btnRefine.classList.toggle("active", state.cpuRefine && !f.meta.gpuOnly);
   ui.btnRefine.disabled = state.compare.enabled || !!f.meta.gpuOnly;
-  ui.btnMobileRefine.textContent = f.meta.gpuOnly ? "GPU Only" : (state.cpuRefine ? "Refine ON" : "Refine");
-  ui.btnMobileRefine.title = ui.btnRefine.title;
-  ui.btnMobileRefine.classList.toggle("active", state.cpuRefine && !f.meta.gpuOnly);
-  ui.btnMobileRefine.disabled = ui.btnRefine.disabled;
   ui.btnPalette.textContent = state.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
   ui.btnMobilePalette.textContent = ui.btnPalette.textContent;
   const supportsBasinMode = (f.meta.colorModes || []).includes("basin");
   if (!supportsBasinMode && state.colorMode === COLOR_MODE_BASIN) state.colorMode = COLOR_MODE_ESCAPE;
   if (!compareSupportsBasin && state.compare.colorMode === COLOR_MODE_BASIN) state.compare.colorMode = COLOR_MODE_ESCAPE;
   ui.btnColorMode.disabled = !supportsBasinMode;
-  ui.btnColorMode.textContent = state.colorMode === COLOR_MODE_BASIN ? "Basin" : "Escape";
+  ui.btnColorMode.textContent = state.colorMode === COLOR_MODE_BASIN ? "Basin Mode" : "Escape Mode";
   ui.btnColorMode.classList.toggle("active", state.colorMode === COLOR_MODE_BASIN);
   ui.zoomReadout.textContent = formatZoom(getZoom());
   ui.tourMeta.textContent = tour ? `${tour.stops.length} stops` : "No tour selected";
@@ -1352,11 +1349,12 @@ function updateUI() {
   ui.inspectOrbit.textContent = formatReferenceOrbitLength();
   ui.inspectSummary.textContent = getInspectorSummary(f, stop);
   ui.compareDivider.hidden = !state.compare.enabled;
-  ui.btnCompareToggle.textContent = state.compare.enabled ? "On" : "Off";
+  ui.compareStateLabel.textContent = state.compare.enabled ? "On" : "Off";
+  ui.btnCompareToggle.textContent = state.compare.enabled ? "Compare On" : "Compare Off";
   ui.btnCompareToggle.classList.toggle("active", state.compare.enabled);
   ui.btnComparePalette.textContent = state.compare.colorStyle === COLOR_STYLE_PALETTE ? "Palette" : "Accent";
   ui.btnCompareColorMode.disabled = !compareSupportsBasin;
-  ui.btnCompareColorMode.textContent = state.compare.colorMode === COLOR_MODE_BASIN ? "Basin" : "Escape";
+  ui.btnCompareColorMode.textContent = state.compare.colorMode === COLOR_MODE_BASIN ? "Basin Mode" : "Escape Mode";
   ui.btnCompareColorMode.classList.toggle("active", state.compare.colorMode === COLOR_MODE_BASIN);
   ui.compareSummary.textContent = state.compare.enabled
     ? `Left: ${f.name}. Right: ${compareFractal.name}. Shared camera, split-screen GPU compare. CPU refine is paused while compare is active.`
@@ -4000,7 +3998,7 @@ ui.btnPalette.addEventListener("click", () => { state.palette = (state.palette +
 ui.btnMobilePrev.addEventListener("click", () => switchFractal(-1));
 ui.btnMobileNext.addEventListener("click", () => switchFractal(1));
 ui.btnMobilePalette.addEventListener("click", () => { state.palette = (state.palette + 1) % 5; markMinimapDirty(); markDeepDirty(true); saveSettings(); });
-ui.btnMobileRefine.addEventListener("click", toggleRefine);
+ui.btnMobileReset.addEventListener("click", () => { resetView(); saveSettings(); });
 ui.btnMobileControls.addEventListener("click", () => setMobileSheetState(ui.hud.dataset.mobileState === "open" ? "compact" : "open"));
 ui.btnSheetHandle.addEventListener("click", toggleMobileSheet);
 ui.mobileTabs.forEach(button => {
