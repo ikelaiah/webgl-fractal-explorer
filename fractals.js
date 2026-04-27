@@ -516,6 +516,32 @@ void main() {
 }
 `;
 
+const phoenixBloomFrag = fragHeader + `
+void main() {
+  vec2 z = vec2(worldCoord(uX0, gl_FragCoord.x),
+                worldCoord(uY0, gl_FragCoord.y));
+  vec2 c = uJuliaC;
+  vec2 prev = vec2(0.0);
+  float i = 0.0, mi = float(uIter);
+  float bloom = 0.0;
+  for (int n = 0; n < MAX_ITER; n++) {
+    if (n >= uIter) break;
+    vec2 memory = vec2(-0.24, 0.22) * prev.x;
+    vec2 next = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c + memory;
+    float r2 = dot(next, next);
+    bloom += 0.028 / (0.075 + r2);
+    prev = z;
+    z = next;
+    if (r2 > 256.0) break;
+    i += 1.0;
+  }
+  vec3 base = colorize(i, mi, z);
+  float halo = smoothstep(0.18, 1.35, bloom);
+  vec3 accent = mix(vec3(0.12, 0.56, 1.0), vec3(1.0, 0.40, 0.86), halo);
+  gl_FragColor = vec4(clamp(base + accent * halo * 0.72, 0.0, 1.0), 1.0);
+}
+`;
+
 // -- Perpendicular Mandelbrot -------------------------------------------------
 const perpendicularMandelbrotFrag = fragHeader + `
 void main() {
@@ -1569,7 +1595,7 @@ const FRACTALS = [
   { name: "Cubic Celtic",        category: "Folded",        src: cubicCelticFrag,      center: [0.0, 0.0], scale: 3.0, julia: false, formula: "cubicCeltic" },
   { name: "Cubic Buffalo",       category: "Folded",        src: cubicBuffaloFrag,     center: [0.0, -0.1], scale: 3.0, julia: false, formula: "cubicBuffalo" },
   { name: "Phoenix Julia",       category: "Julia",         src: phoenixFrag,          center: [0.0,  0.0], scale: 3.2, julia: true,  formula: "phoenix" },
-  { name: "Phoenix Julia - Bloom", category: "Julia",       src: phoenixFrag,          center: [0.0,  0.0], scale: 3.0, julia: false, juliaParam: [-0.58, 0.42], formula: "phoenix" },
+  { name: "Phoenix Julia - Bloom", category: "Julia",       src: phoenixBloomFrag,     center: [0.0,  0.0], scale: 2.7, julia: false, juliaParam: [-0.58, 0.42], formula: "phoenixBloom" },
   { name: "Perpendicular Mandelbrot", category: "Perpendicular", src: perpendicularMandelbrotFrag, center: [0.0, 0.0], scale: 3.5, julia: false, formula: "perpendicularMandelbrot" },
   { name: "Celtic Heart",        category: "Folded",        src: celticHeartFrag,      center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "celticHeart" },
   { name: "Perpendicular Buffalo", category: "Perpendicular", src: perpendicularBuffaloFrag, center: [-0.2, 0.0], scale: 3.2, julia: false, formula: "perpendicularBuffalo" },
@@ -1645,6 +1671,7 @@ const FORMULA_DISPLAY = Object.freeze({
   cubicCeltic: "z(n+1) = |Re(z(n)^3)| + iIm(z(n)^3) + c",
   cubicBuffalo: "z(n+1) = |Re(z(n)^3)| - i|Im(z(n)^3)| + c",
   phoenix: "z(n+1) = z(n)^2 + p + q*z(n-1)",
+  phoenixBloom: "z(n+1) = z(n)^2 + c + q*Re(z(n-1))",
   perpendicularMandelbrot: "z(n+1) = (Re(z(n)^2) + i|Im(z(n)^2)|) + c",
   celticHeart: "z(n+1) = |Re(z(n)^2)| + iIm(z(n)^2) + c",
   perpendicularBuffalo: "z(n+1) = (|Re(z(n)^2)| + iIm(z(n)^2)) + c",
@@ -1705,6 +1732,7 @@ const FORMULA_EXPLANATION = Object.freeze({
   cubicCeltic: "A third-power Celtic fold that keeps the smoother multibrot symmetry while adding folded, pinched interior gaps.",
   cubicBuffalo: "A third-power Buffalo fold that turns the cubic lobes into denser mirrored wings and heavier edge knots.",
   phoenix: "Phoenix adds memory through the previous iterate, so the orbit is shaped by both the current and prior state.",
+  phoenixBloom: "A fixed-seed Phoenix variant with asymmetric memory and a bright orbit halo, making the preset visibly distinct from the interactive Phoenix view.",
   perpendicularMandelbrot: "Perpendicular variants selectively fold one quadratic component, which skews the usual Mandelbrot geometry into harsher boundary forms.",
   celticHeart: "This fold emphasizes the heart-shaped cavity that appears when the real part is reflected while the imaginary flow stays signed.",
   perpendicularBuffalo: "A hybrid of perpendicular and Buffalo folding that produces tight, high-contrast edge geometry.",
@@ -1776,6 +1804,7 @@ const FORMULA_BEHAVIOR = Object.freeze({
   rationalJuliaLace: { initial: "julia" },
   novaJuliaBloom: { initial: "julia" },
   phoenix: { initial: "phoenix" },
+  phoenixBloom: { initial: "phoenixBloom" },
   lambda: { initial: "lambda" },
   mandelbox: { initial: "point" },
   newtonCubic: { initial: "point", newton: true, basinRoots: 3, colorModes: ["escape", "basin"] },

@@ -1930,6 +1930,8 @@ function previewEscape(fractalIdx, x, y) {
     zx = x; zy = y; cx = jc[0]; cy = jc[1];
   } else if (meta.initial === "phoenix") {
     zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  } else if (meta.initial === "phoenixBloom") {
+    zx = x; zy = y; cx = jc[0]; cy = jc[1];
   } else if (meta.initial === "lambda") {
     zx = 0.5; zy = 0; cx = x; cy = y;
   } else if (meta.initial === "point") {
@@ -1979,6 +1981,10 @@ function previewEscape(fractalIdx, x, y) {
     } else if (formula === "phoenix") {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
+      px = zx; py = zy;
+    } else if (formula === "phoenixBloom") {
+      nx = x2 - y2 + cx - 0.24 * px;
+      ny = 2 * xy + cy + 0.22 * px;
       px = zx; py = zy;
     } else if (formula === "perpendicularMandelbrot" || formula === "perpendicularJulia") {
       nx = x2 - y2 + cx;
@@ -2561,6 +2567,7 @@ const FORMULA_ID = {
   celtic: 7, celticJulia: 7,
   buffalo: 8, buffaloJulia: 8,
   phoenix: 9,
+  phoenixBloom: 47,
   perpendicularMandelbrot: 10, perpendicularJulia: 10,
   celticHeart: 11,
   perpendicularBuffalo: 12,
@@ -2727,6 +2734,8 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     zx = x; zy = y; cx = jc[0]; cy = jc[1];
   } else if (meta.initial === "phoenix") {
     zx = x; zy = y; cx = -0.5 + 0.32 * jc[0]; cy = 0.32 * jc[1];
+  } else if (meta.initial === "phoenixBloom") {
+    zx = x; zy = y; cx = jc[0]; cy = jc[1];
   } else if (meta.initial === "lambda") {
     zx = 0.5; zy = 0; cx = x; cy = y;
   } else if (meta.initial === "point") {
@@ -2735,7 +2744,7 @@ function cpuEscape(formula, x, y, maxIter, jc) {
 
   // Periodicity check is safe only when the map is c-static, not a basin, not an orbit trap,
   // and doesn't use history (phoenix). Newton/basin paths have their own convergence check.
-  const useCycle = !isNewton && !hasBasin && !trapKind && meta.initial !== "phoenix" && fid !== 15;
+  const useCycle = !isNewton && !hasBasin && !trapKind && meta.initial !== "phoenix" && meta.initial !== "phoenixBloom" && fid !== 15;
   let refX = zx, refY = zy, refresh = 8, since = 0;
 
   for (let n = 0; n < maxIter; n++) {
@@ -2784,6 +2793,10 @@ function cpuEscape(formula, x, y, maxIter, jc) {
     } else if (fid === 9) {
       nx = x2 - y2 + cx - 0.45 * px;
       ny = 2 * xy + cy;
+      px = zx;
+    } else if (fid === 47) {
+      nx = x2 - y2 + cx - 0.24 * px;
+      ny = 2 * xy + cy + 0.22 * px;
       px = zx;
     } else if (fid === 10) {
       nx = x2 - y2 + cx;
