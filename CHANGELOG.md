@@ -10,6 +10,8 @@ All notable changes to WebGL Fractal Explorer are documented here.
 - Replaced the compact mobile Refine shortcut with Reset to keep the default phone dock focused on common navigation actions
 - Added mobile gesture hints for drag, pinch, and opening the full controls sheet
 - Made mode labels more explicit with states such as Refine On/Off, Escape Mode, Basin Mode, and Compare On/Off
+- Persisted advanced panel open/closed state across refreshes
+- Added collapsed-header status badges for Composer, Inspector, Profiler, and Compare
 - Bumped static asset query versions to 1.3.8
 
 ## [1.3.7] — 2026-04-26

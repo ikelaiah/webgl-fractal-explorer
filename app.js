@@ -103,6 +103,8 @@ const ui = {
   composerMode: document.getElementById("composerMode"),
   composerStack: document.getElementById("composerStack"),
   composerSummary: document.getElementById("composerSummary"),
+  composerPanel: document.getElementById("composerPanel"),
+  composerStateLabel: document.getElementById("composerStateLabel"),
   btnComposerUse: document.getElementById("btnComposerUse"),
   btnComposerReset: document.getElementById("btnComposerReset"),
   iterations:  document.getElementById("iterations"),
@@ -123,6 +125,7 @@ const ui = {
   btnExport:   document.getElementById("btnExport"),
   btnCopyFormula: document.getElementById("btnCopyFormula"),
   btnShare:    document.getElementById("btnShare"),
+  comparePanel: document.getElementById("comparePanel"),
   btnCompareToggle: document.getElementById("btnCompareToggle"),
   compareStateLabel: document.getElementById("compareStateLabel"),
   compareFractalSelect: document.getElementById("compareFractalSelect"),
@@ -145,6 +148,9 @@ const ui = {
   inspectPerturb: document.getElementById("inspectPerturb"),
   inspectOrbit: document.getElementById("inspectOrbit"),
   inspectSummary: document.getElementById("inspectSummary"),
+  inspectorPanel: document.getElementById("inspectorPanel"),
+  inspectorStateLabel: document.getElementById("inspectorStateLabel"),
+  profilerPanel: document.getElementById("profilerPanel"),
   profileBudget: document.getElementById("profileBudget"),
   profileFrameMs: document.getElementById("profileFrameMs"),
   profileSubmitMs: document.getElementById("profileSubmitMs"),
@@ -263,6 +269,14 @@ const state = {
     id: "",
     stop: 0,
     playing: false,
+  },
+  ui: {
+    panels: {
+      composer: false,
+      inspector: false,
+      profiler: false,
+      compare: false,
+    },
   },
 };
 
@@ -567,6 +581,29 @@ function updateFavoriteButton() {
   ui.btnFavoriteFractal.setAttribute("aria-pressed", String(saved));
 }
 
+function getPanelElements() {
+  return {
+    composer: ui.composerPanel,
+    inspector: ui.inspectorPanel,
+    profiler: ui.profilerPanel,
+    compare: ui.comparePanel,
+  };
+}
+
+function readPanelState() {
+  const panels = getPanelElements();
+  return Object.fromEntries(Object.entries(panels).map(([key, panel]) => [key, !!panel?.open]));
+}
+
+function applyPanelState(panels = {}) {
+  const elements = getPanelElements();
+  Object.entries(elements).forEach(([key, panel]) => {
+    if (!panel || panels[key] === undefined) return;
+    panel.open = !!panels[key];
+  });
+  state.ui.panels = { ...state.ui.panels, ...readPanelState() };
+}
+
 function buildSessionSnapshot() {
   // Keep one explicit session object so future features such as compare mode,
   // tours, and richer sharing can reuse the same schema instead of inventing
@@ -610,6 +647,9 @@ function buildSessionSnapshot() {
       stop: Math.max(0, parseInt(state.tour.stop, 10) || 0),
       playing: !!state.tour.playing,
     },
+    ui: {
+      panels: readPanelState(),
+    },
   };
 }
 
@@ -623,6 +663,7 @@ function applySessionSnapshot(snapshot, options = {}) {
   const compare = data.compare && typeof data.compare === "object" ? data.compare : {};
   const composer = data.composer && typeof data.composer === "object" ? data.composer : {};
   const tour = data.tour && typeof data.tour === "object" ? data.tour : {};
+  const uiState = data.ui && typeof data.ui === "object" ? data.ui : {};
 
   if (active.fractalIdx !== undefined) state.fractalIdx = clampFractalIndex(active.fractalIdx);
   if (active.palette !== undefined) state.palette = Math.max(0, Math.min(parseInt(active.palette, 10) || 0, 4));
@@ -660,6 +701,7 @@ function applySessionSnapshot(snapshot, options = {}) {
     stop: Math.max(0, parseInt(tour.stop, 10) || 0),
     playing: !!tour.playing,
   };
+  if (uiState.panels && typeof uiState.panels === "object") applyPanelState(uiState.panels);
 
   if (!options.skipSyncTarget) syncTargetToCurrent();
 }
@@ -1291,6 +1333,14 @@ function syncJuliaParamInputs() {
   ui.juliaImag.value = imag.toFixed(3);
 }
 
+function composerStatusLabel() {
+  const config = normalizeComposerConfig(state.composer);
+  const defaults = normalizeComposerConfig(COMPOSER_DEFAULT);
+  if (isComposerFractal()) return "Active";
+  const edited = config.mode !== defaults.mode || config.ops.some((op, idx) => op !== defaults.ops[idx]);
+  return edited ? "Edited" : "Default";
+}
+
 // ─── Sync UI ──────────────────────────────────────────────────────────────────
 
 function updateUI() {
@@ -1306,6 +1356,7 @@ function updateUI() {
   ui.compareColorStyle.value = String(state.compare.colorStyle);
   ui.formulaDisplay.value = getActiveFormulaText(f);
   syncComposerControls();
+  ui.composerStateLabel.textContent = composerStatusLabel();
   ui.tourSelect.value = tour ? tour.id : "";
   ui.colorStyle.value = String(state.colorStyle);
   ui.juliaRow.style.display  = f.julia ? "" : "none";
@@ -1344,6 +1395,7 @@ function updateUI() {
   ui.inspectX.textContent = formatCoordinate(state.targetCenterX);
   ui.inspectY.textContent = formatCoordinate(state.targetCenterY);
   ui.inspectMode.textContent = getInspectorModeLabel(f);
+  ui.inspectorStateLabel.textContent = ui.inspectMode.textContent;
   ui.inspectFamily.textContent = f.category;
   ui.inspectPerturb.textContent = getPerturbationHealthLabel();
   ui.inspectOrbit.textContent = formatReferenceOrbitLength();
@@ -4001,6 +4053,13 @@ ui.btnMobilePalette.addEventListener("click", () => { state.palette = (state.pal
 ui.btnMobileReset.addEventListener("click", () => { resetView(); saveSettings(); });
 ui.btnMobileControls.addEventListener("click", () => setMobileSheetState(ui.hud.dataset.mobileState === "open" ? "compact" : "open"));
 ui.btnSheetHandle.addEventListener("click", toggleMobileSheet);
+Object.values(getPanelElements()).forEach(panel => {
+  if (!panel) return;
+  panel.addEventListener("toggle", () => {
+    state.ui.panels = { ...state.ui.panels, ...readPanelState() };
+    saveSettings();
+  });
+});
 ui.mobileTabs.forEach(button => {
   button.addEventListener("click", () => {
     setMobileTab(button.dataset.mobileTabTarget);

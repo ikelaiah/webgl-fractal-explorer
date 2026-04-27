@@ -88,9 +88,10 @@
               <button id="btnCopyFormula" type="button" title="Copy active formula">Copy</button>
             </div>
           </div>
-          <details class="composer-panel collapsible-panel" aria-label="Formula composer">
+          <details id="composerPanel" class="composer-panel collapsible-panel" aria-label="Formula composer">
             <summary class="panel-summary">
               <strong>Composer</strong>
+              <span id="composerStateLabel">Default</span>
             </summary>
             <div class="composer-header-actions">
               <button id="btnComposerReset" type="button" title="Reset composer">Reset</button>
@@ -176,9 +177,10 @@
           </div>
         </section>
 
-        <details class="inspector-panel collapsible-panel" aria-label="Explorer inspector">
+        <details id="inspectorPanel" class="inspector-panel collapsible-panel" aria-label="Explorer inspector">
           <summary class="panel-summary">
             <strong>Inspector</strong>
+            <span id="inspectorStateLabel">Escape</span>
           </summary>
           <div class="inspector-grid">
             <div>
@@ -209,7 +211,7 @@
           <p id="inspectSummary" class="inspector-summary">The inspector explains the active fractal, render backend, and current camera state.</p>
         </details>
 
-        <details class="profiler-panel collapsible-panel" aria-label="Performance profiler">
+        <details id="profilerPanel" class="profiler-panel collapsible-panel" aria-label="Performance profiler">
           <summary class="panel-summary">
             <strong>Profiler</strong>
             <span id="profileBudget">60 FPS target</span>
@@ -243,7 +245,7 @@
           <p id="profileHint" class="profiler-summary">Profiler data appears as you move, switch formulas, and run CPU refinement.</p>
         </details>
 
-        <details class="compare-panel collapsible-panel" aria-label="Compare mode">
+        <details id="comparePanel" class="compare-panel collapsible-panel" aria-label="Compare mode">
           <summary class="panel-summary">
             <strong>Compare</strong>
             <span id="compareStateLabel">Off</span>
